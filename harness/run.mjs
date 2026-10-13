@@ -331,25 +331,56 @@ export async function run(context={}) {
       }
       if(state.planDigest!==digest(entries(STAGE_FILES.implementation)))throw Error("Implementation plan changed since checkpoint.");
       const blocks=validateBlocks(JSON.parse(read("docs/BUILD_BLOCKS.json")),execution.requirements);
-      for(const b of blocks){
-        if(state.completedBlocks.some(x=>x.id===b.id))continue;
+      const infrastructure=JSON.parse(read("docs/INFRA_PLAN.json"));
+      let resourceInfo=null;
+      if(infrastructure.resources.length){
+        if(!read("docs/infrastructure/PROVISIONED.json"))
+          throw Error("Cannot code against unprovisioned data resources. Approve and provision the infrastructure first.");
+        resourceInfo=JSON.parse(read("docs/infrastructure/PROVISIONED.json"));
+        if(resourceInfo.sourcePlanDigest!==executionDigest(infrastructure))
+          throw Error("Resource bindings are from a stale infrastructure plan.");
+      }
+      const selected=readyBlocks(blocks,state.completedBlocks,BLOCKS_PER_RUN);
+      if(!selected.length && remainingBlocks(blocks,state.completedBlocks).length)
+        throw Error("No dependency-ready block. Review invalid block dependency plan.");
+      for(const b of selected){
         const specs=digest(entries(Object.values(STAGE_FILES).flat()));
-        agent(provider,instructions()+"\nCloudflare target Worker (exact name, no substitutions): "+(env.BUILDKIT_WORKER_NAME||"NOT CONFIGURED: require the user to set BUILDKIT_WORKER_NAME")+". Do not deploy; produce wrangler.json name matching this value when configured.\nImplement only "+JSON.stringify(b)+
-          ". Build a real Cloudflare Workers compatible web app. Generate wrangler.json in strict JSON "+
-          "with approved worker name, previews.vars.ENVIRONMENT='preview', and separate preview "+
-          "resource bindings. Configure package.json buildkit.deploymentDirectory='dist/buildkit'. "+
-          "The npm build command must emit a complete self-contained dist/buildkit/wrangler.json "+
-          "with no_bundle:true, a built .js entry and/or copied static assets all inside dist/buildkit. "+
-          "Do not require npm install or another build when this output is uploaded to Cloudflare. "+
-          "Generate tests/e2e.spec.mjs with at least two actual user journeys "+
-          "using BASE_URL, as well as npm build/test scripts. Do not insert keys or customer data. "+
-          "Do not modify approved specifications. The controller runs tests.");
-        if(digest(entries(Object.values(STAGE_FILES).flat()))!==specs)throw Error("Builder changed a specification.");
-        const evidence=testApp(b);
+        const cloudflareInstructions=execution.deploy.adapter==="cloudflare-workers"?
+          "Deploy adapter Cloudflare Workers for "+execution.deploy.workerName+
+          ". Generate wrangler.json with previews.vars.ENVIRONMENT='preview' and separate resources. "+
+          "Exact resolved, already provisioned bindings (no changes permitted): "+
+          JSON.stringify(resourceInfo?resolvedBindings(resourceInfo):{production:{},previews:{}})+
+          ". Build to dist/buildkit including no_bundle compiled JS entry/static assets and wrangler.json. "+
+          "Set package.json buildkit.deploymentDirectory='dist/buildkit'. Never provision resources yourself.":
+          "Deployment adapter: "+execution.deploy.adapter+" on "+execution.deploy.provider+
+          ". DO NOT generate Cloudflare Worker configuration as a substitute. "+
+          "Implement approved product code for the selected runtime, and leave unsupported preview/deploy adapters explicit.";
+        agent(provider,instructions()+"\nApproved execution plan: "+JSON.stringify(execution)+
+          "\nImplement only "+JSON.stringify(b)+". "+cloudflareInstructions+
+          " Include real tests for this block. Do not modify approved specifications. "+
+          "For Node, include npm build/test scripts; for Python requirements.txt and pytest; "+
+          "for Rust Cargo.lock, cargo build/tests. No secrets, deployments, or customer data.");
+        if(digest(entries(Object.values(STAGE_FILES).flat()))!==specs)
+          throw Error("Builder changed approved specifications.");
+        const evidence=testApp(b,execution);
         state.completedBlocks.push({id:b.id,checked:new Date().toISOString(),evidence});
         persist("buildkit: verified block "+b.id);
       }
-      state.finalEvidence=testApp({id:"FINAL"});
+      const pending=remainingBlocks(blocks,state.completedBlocks);
+      if(pending.length){
+        state.status="blocked";state.lastError=null;state.pendingContinuation=true;
+        persist("buildkit: checkpoint "+state.completedBlocks.length+"/"+blocks.length+" verified blocks");
+        await comment("Completed "+state.completedBlocks.length+" of "+blocks.length+" approved build blocks. "+
+          "All validated work is checkpointed. Continuing dependency-ready blocks in a new bounded Actions run.");
+        if(!context.disableAutomaticContinuation){
+          try{await api("POST","/actions/workflows/buildkit.yml/dispatches",
+            {ref:baseBranch,inputs:{issue_number:String(number),command:"resume"}});}
+          catch(e){await comment("Automatic continuation was unavailable. Use /resume; no verified block was discarded.");}
+        }
+        return;
+      }
+      state.pendingContinuation=false;
+      state.finalEvidence=testApp({id:"FINAL"},execution);
       persist("buildkit: integrated application verification");
       const reviewer=(env.BUILDKIT_REVIEW_PROVIDER||"").trim().toLowerCase();
       if(reviewer&&reviewer!==provider){
