@@ -217,3 +217,43 @@ test("a verified independent second provider can satisfy security sign-off, but 
     assert.notEqual(f.state.codeReview.provider,f.state.codeReview.builder);
   }finally{f.cleanup();}
 });
+
+test("controller retries a failed preview dispatch against the original candidate SHA",async()=>{
+  const f=fixture();try{
+    f.usePreviewHook=false;f.failPreviewDispatch=true;
+    await f.invoke();await f.approve();
+    await assert.rejects(f.approve(),/dispatch|blocked/i);
+    assert.equal(f.state.status,"blocked");
+    assert.equal(f.previewAttempts.length,1);
+    const original=f.state.previewRequest.sha;
+    assert.equal(f.previewAttempts[0].inputs.candidate_sha,original);
+    f.failPreviewDispatch=false;
+    f.workflowRuns=[{id:22,display_title:f.state.previewRequest.title,status:"completed",
+      conclusion:"failure",html_url:"https://github.com/test/product/actions/runs/22"}];
+    await f.invoke("/resume");
+    assert.equal(f.state.status,"awaiting_preview");
+    assert.equal(f.previewAttempts.length,2);
+    assert.equal(f.previewAttempts[1].inputs.candidate_sha,original);
+  }finally{f.cleanup();}
+});
+test("controller retries production dispatch without replacing the release-approved commit",async()=>{
+  const f=fixture();try{
+    f.useReleaseHook=false;
+    await f.invoke();await f.approve();await f.approve();await f.approve();
+    await f.invoke("/review "+f.state.codeReviewRequest.code);
+    assert.equal(f.state.gate.stage,"release");
+    f.failReleaseDispatch=true;
+    await assert.rejects(f.approve(),/dispatch|blocked/i);
+    assert.equal(f.state.status,"blocked");
+    const original=f.state.releaseRequest.sha;
+    assert.equal(f.releaseAttempts.length,1);
+    f.failReleaseDispatch=false;
+    f.workflowRuns=[{id:33,display_title:f.state.releaseRequest.title,status:"completed",
+      conclusion:"failure",html_url:"https://github.com/test/product/actions/runs/33"}];
+    await f.invoke("/resume");
+    assert.equal(f.state.status,"deploy_pending");
+    assert.equal(f.releaseAttempts.length,2);
+    assert.equal(f.releaseAttempts[0].inputs.approved_sha,original);
+    assert.equal(f.releaseAttempts[1].inputs.approved_sha,original);
+  }finally{f.cleanup();}
+});
