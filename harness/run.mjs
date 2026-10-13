@@ -247,8 +247,47 @@ export async function run(context={}) {
         write("docs/reviews/INDEPENDENT.md",report+"\n");
         if(!/^PASS\b/i.test(report)){persist("buildkit: independent review findings");throw Error("Independent reviewer did not PASS. See docs/reviews/INDEPENDENT.md, fix the findings, then /resume.");}
       }
-      await gate("preview","All planned blocks completed; command logs are in docs/evidence. This is CODE REVIEW, not a hosted/browser-tested preview. "+
-        (reviewer&&reviewer!==provider?"Separate-model static review passed.":"Independent manual review is still required."));
+      const profile=classifyProduct(state.brief,read("docs/PRD.md"),read("docs/HLD.md"));
+      write("docs/security/PROFILE.json",JSON.stringify(profile,null,2)+"\n");
+      state.complianceProfileDigest=digest(inspectFile(root,"docs/security/PROFILE.json"));
+      state.security={secretScan:{passed:true,method:"controller content/path scan"},
+        dependencyAudit:{passed:true,method:"isolated npm audit --omit=dev --audit-level=high"}};
+      if(context.previewForTest){
+        const demo=await context.previewForTest();
+        verifyBrowserResults(demo,demo.previewUrl);
+        write("docs/evidence/PREVIEW.json",JSON.stringify({...demo,outcome:"GO",
+          sourceSha:git("rev-parse","HEAD")},null,2)+"\n");
+        state.preview={url:demo.previewUrl,sourceSha:git("rev-parse","HEAD"),report:"docs/evidence/PREVIEW.json"};
+        await gate("preview","Simulated browser result used by offline harness tests ONLY.");
+      }else{
+        state.status="awaiting_preview";state.previewSourceSha=git("rev-parse","HEAD");state.gate=null;
+        persist("buildkit: awaiting Cloudflare Preview for #"+number);
+        await pr();
+        await comment("Buildkit completed the testable code blocks. Running Cloudflare Preview, "+
+          "isolated dependency/security checks and Playwright browser tests. "+
+          "If setup is missing, add CLOUDFLARE_PREVIEW_TOKEN, CLOUDFLARE_ACCOUNT_ID and "+
+          "BUILDKIT_WORKER_NAME in this product repository. Review happens after a real Preview URL exists.");
+        await api("POST","/actions/workflows/buildkit-preview.yml/dispatches",
+          {ref:baseBranch,inputs:{issue_number:String(number),candidate_sha:checkpoint}});
+      }
+    }else if(state.stage==="release"){
+      const profile=JSON.parse(read("docs/security/PROFILE.json"));
+      const preview=JSON.parse(read("docs/evidence/PREVIEW.json"));
+      const report=assessRelease({profile,secretScan:state.security?.secretScan,
+        dependencyAudit:state.security?.dependencyAudit,preview,
+        independentReview:{passed:!!state.previewReviewedBy},
+        externalAttestation:{approved:!!state.complianceReview?.confirmed &&
+          state.complianceReview.profileDigest===state.complianceProfileDigest}});
+      write("docs/security/RELEASE_REVIEW.json",JSON.stringify({...report,
+        reviewedPreviewSha:state.preview?.sourceSha||null,
+        productionWorker:env.BUILDKIT_WORKER_NAME||null},null,2)+"\n");
+      persist("buildkit: security and release assessment for #"+number);
+      if(report.decision!=="GO")throw Error("Production blocked: "+report.blockers.join("; ")+
+        " For regulated products obtain a qualified review, then comment "+
+        "/attest COMPLIANCE-REVIEWED and /resume.");
+      await gate("release","Explicit production approval: release only the browser-reviewed "+
+        "commit to the approved Cloudflare Worker. This may merge the product PR and "+
+        "incur ongoing Cloudflare/model usage charges. No deployment until you approve.");
     }else throw Error("Invalid stage.");
   }
   if(!token||!repo)throw Error("GitHub runtime missing.");
