@@ -37,9 +37,37 @@ function save(state,message){
   const auth=Buffer.from('x-access-token:'+token).toString('base64');
   git('-c','http.https://github.com/.extraheader=AUTHORIZATION: basic '+auth,'push','origin','HEAD:refs/heads/buildkit/issue-'+issue);
 }
+function synchronizeProductBranch() {
+  // Dispatch metadata can have been committed after the immutable preview candidate.
+  // Accept ONLY controlled metadata changes; never apply stale browser evidence to new code.
+  const name='buildkit/issue-'+issue;
+  const auth=Buffer.from('x-access-token:'+token).toString('base64');
+  git('-c','http.https://github.com/.extraheader=AUTHORIZATION: basic '+auth,
+    'fetch','--no-tags','origin','refs/heads/'+name+':refs/remotes/origin/'+name);
+  const latest=git('rev-parse','refs/remotes/origin/'+name);
+  if(latest!==sha){
+    git('merge-base','--is-ancestor',sha,latest);
+    const touched=git('diff','--name-only',sha,latest).split('\n').filter(Boolean);
+    if(touched.some(p=>!['.buildkit/state.json','docs/evidence/PREVIEW.json'].includes(p)))
+      throw Error('Product code changed since the verified preview. Fresh approval required.');
+    git('switch','--detach',latest);
+  }
+  const state=JSON.parse(read('.buildkit/state.json'));
+  if(state.issue!==issue||state.stage!=='implementation'||
+     (state.previewRequest && state.previewRequest.sha!==sha)||
+     !['awaiting_preview','blocked'].includes(state.status))
+    throw Error('Preview result is obsolete or another stage has started.');
+  return state;
+}
 async function complete(){
   if(!token||!repo)throw Error('GitHub authorization missing.');
-  const state=preflight(),runURL='https://github.com/'+repo+'/actions/runs/'+env.GITHUB_RUN_ID;
+  // The callback runs on the candidate ref, even when preflight failed.
+  // A failed preflight must still create a recoverable, visible blocker.
+  const original=JSON.parse(read('.buildkit/state.json'));
+  if(git('rev-parse','HEAD')!==sha||original.issue!==issue||
+     original.stage!=='implementation'||original.status!=='awaiting_preview')
+    throw Error('Invalid or obsolete preview candidate.');
+  const state=synchronizeProductBranch(),runURL='https://github.com/'+repo+'/actions/runs/'+env.GITHUB_RUN_ID;
   let result,problem;
   try {
     if(env.BUILDKIT_BROWSER_JOB!=='success')throw Error('Preview build/deploy/browser job failed.');
@@ -60,7 +88,7 @@ async function complete(){
   const artifact={id:String(env.BUILDKIT_ARTIFACT_ID),runId:String(env.GITHUB_RUN_ID),
     payloadDigest:env.BUILDKIT_ARTIFACT_DIGEST,sourceSha:sha};
   write('docs/evidence/PREVIEW.json',{...result,outcome:'GO',sourceSha:sha,artifact,runURL});
-  state.status='awaiting_approval';state.lastError=null;
+  state.status='awaiting_approval';state.lastError=null;state.dispatch=null;state.previewRequest=null;
   state.preview={url:result.previewUrl,sourceSha:sha,report:'docs/evidence/PREVIEW.json',artifact};
   state.codeReview=null;state.previewReviewedBy=null;
   state.gate=newGate('preview',versionFiles(),state.revision);
