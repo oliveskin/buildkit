@@ -32,3 +32,20 @@ jobs:
         env:
           BUILDKIT_TEST_REAL_DOCKER: '1'
         run: node --test --test-name-pattern='complete approval flow' harness/flow.test.mjs
+  opencode-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned CLI without model or deployment credentials
+        working-directory: ${{ runner.temp }}
+        run: npm install -g opencode-ai@1.19.0
+      - name: Validate CLI configuration and local simulated tool-call protocol
+        env:
+          BUILDKIT_TEST_OPENCODE: '1'
+        run: node --test harness/model-cli.test.mjs harness/model-protocol.test.mjs
