@@ -2,7 +2,7 @@
 Status: DRAFT / APPROVED | PRD version: [commit]
 
 ## Architecture at a glance
-Browser → Cloudflare Worker → (D1/R2 only if needed) → Model/provider API if justified
+[Select actual client runtime(s), backend, compute/GPU, database and deployment provider from requirements. Cloudflare is ONE candidate, not a mandatory destination.]
 
 ## Components and responsibilities
 | Component | Responsibility | Build/reuse | Reason | Failure mode |
@@ -19,6 +19,12 @@ Browser → Cloudflare Worker → (D1/R2 only if needed) → Model/provider API 
 
 ## AI/model strategy
 [Task, candidate model, managed vs OSS decision, GPU/no GPU, benchmark gate]
+
+## Execution adapter contract
+[docs/EXECUTION_PLAN.json: productKind, rationale, requirement IDs, runtime build adapter, selected preview/deploy adapters, target name where relevant, explicit missing automation]
+
+## Infrastructure and costs requiring user approval
+[docs/INFRA_PLAN.json: precise resources/preview vs production identities, domain intent, account/permissions, pricing sources, estimated usage or UNKNOWN, rollback consequences. Never provision before the user approves.]
 
 ## Deployment and operations
 [GitHub repo, CF Worker name/env, Modal app, environments, logging, backup, rollback]
