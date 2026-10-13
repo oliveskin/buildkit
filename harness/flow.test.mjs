@@ -27,7 +27,7 @@ function fixture(){
     const work=path.join(dir,"run-"+(++count));sh(["clone",remote,work],dir);
     const eventPath=path.join(dir,"event-"+count+".json");
     fs.writeFileSync(eventPath,JSON.stringify({action:body?"created":"opened",issue:{number:1},sender:{login:"owner",type:"User"},comment:{id:++commentId,body}}));
-    const env={PATH:process.env.PATH,HOME:process.env.HOME,GITHUB_EVENT_PATH:eventPath,GITHUB_EVENT_NAME:body?"issue_comment":"issues",GITHUB_REPOSITORY:"test/product",GITHUB_TOKEN:"dummy-github-key",OPENAI_API_KEY:"dummy-openai-key",ANTHROPIC_API_KEY:"dummy-claude-key",GITHUB_RUN_ID:String(count),...overrides};
+    const env={PATH:process.env.PATH,HOME:process.env.HOME,GITHUB_EVENT_PATH:eventPath,GITHUB_EVENT_NAME:body?"issue_comment":"issues",GITHUB_REPOSITORY:"test/product",GITHUB_TOKEN:"dummy-github-key",OPENAI_API_KEY:"dummy-openai-key",ANTHROPIC_API_KEY:"dummy-claude-key",BUILDKIT_WORKER_NAME:"bk-fixture-app",GITHUB_RUN_ID:String(count),...overrides};
     const fetchMock=async (url,options)=>{
       const suffix=url.replace("https://api.github.com/repos/test/product","");
       let result;
