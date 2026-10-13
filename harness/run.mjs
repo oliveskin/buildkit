@@ -70,7 +70,7 @@ export async function run(context={}) {
       // Keep this before git add/commit; gitignore alone cannot protect a repository.
       command("docker",["run","--rm","--network=none","--cap-drop=ALL",
         "--security-opt=no-new-privileges","-v",root+":/scan:ro","-w","/scan",
-        "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb","dir","--redact","--no-banner","/scan"],{timeout:120000});
+        "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb","dir","--redact","--verbose","--no-banner","/scan"],{timeout:120000});
     }
     git("add","-A");
     const staged=list("diff","--cached","--name-only","-z");
