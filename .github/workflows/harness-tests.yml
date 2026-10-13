@@ -1,0 +1,26 @@
+name: Buildkit harness tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'harness/**'
+      - '.github/workflows/harness-tests.yml'
+  pull_request:
+    paths:
+      - 'harness/**'
+      - '.github/workflows/buildkit.yml'
+      - '.github/workflows/harness-tests.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check harness/core.mjs
+      - run: node --check harness/run.mjs
+      - run: node --test harness/core.test.mjs
