@@ -5,7 +5,7 @@ import {researchCacheKey,shouldRefreshResearch,invalidateFrom} from './research-
 test('missing sources and changed search settings require collection',()=>{
   const s={...makeState(1),brief:'A product'},env={};
   assert.equal(shouldRefreshResearch(s,env,null),true);
-  s.researchCacheKey=researchCacheKey(s,env);
+  s.researchCacheFingerprint=researchCacheKey(s,env);
   assert.equal(shouldRefreshResearch(s,env,{sources:[1],gaps:[],failures:[]}),false);
   assert.equal(shouldRefreshResearch(s,{BUILDKIT_SEARCH_ENDPOINT:'https://search.example.com'},{}),true);
   assert.equal(shouldRefreshResearch(s,env,{gaps:['missing market evidence']},{retry:true}),true);
