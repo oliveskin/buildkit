@@ -362,7 +362,10 @@ export async function run(context={}) {
     await pr();
     await comment("Buildkit: **"+state.status+"** / **"+state.stage+"**. Completed blocks: "+(state.completedBlocks.map(x=>x.id).join(", ")||"none")+
       (prURL?". [Draft PR]("+prURL+")":"")+(state.gate?". /approve "+state.gate.code:"")+
-      (state.lastError?". Last error: "+state.lastError:"")+". No automatic merge or deployment.");return;
+      (state.lastError?". Last error: "+state.lastError:"")+
+      (state.codeReviewRequest?". Code/security review: /review "+state.codeReviewRequest.code:"")+
+      (state.dispatch?". Workflow request: "+state.dispatch.kind+" @"+state.dispatch.sha:"")+
+      ". Production requires separate approval.");return;
   }
   if(state.status==="release-ready"){await comment("Production release complete in test harness. Check actual Actions deployment status for real projects.");return;}
   if(state.status==="deploy_pending"){await comment("Production workflow dispatched for approved commit. Check Actions for actual release result.");return;}
@@ -376,7 +379,14 @@ export async function run(context={}) {
     for(const p of STAGE_FILES[gateState.stage]||[])state.approvedDocs[p]=digest(inspectFile(root,p));
     state.history.push({time:new Date().toISOString(),event:"approved",stage:gateState.stage,by:who,digest:gateState.digest,revision:gateState.revision});
     state.stage=GATE_NEXT[gateState.stage];state.gate=null;state.feedback="";
-    if(gateState.stage==="preview")state.previewReviewedBy=who;
+    if(gateState.stage==="preview"){
+      state.previewReviewedBy=who;
+      const target=reviewTarget(state.preview);
+      if(state.modelReview?.provider && state.modelReview.provider!==state.modelReview.builder &&
+         /^[0-9a-f]{64}$/.test(state.modelReview.reportDigest||"")){
+        state.codeReview={...target,kind:"model",passed:true,...state.modelReview};
+      } else state.codeReview=null;
+    }
     if(state.stage==="deploying"){
       if(id)state.eventIds.push(id);
       state.status="deploy_pending";state.releaseApprovedBy=who;
@@ -413,6 +423,19 @@ export async function run(context={}) {
     for(const p of files)if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
     state.feedback=cmd.arg;
     persist("buildkit: revise "+boundary+" and invalidate dependent evidence");
+    go=true;
+  }else if(cmd?.name==="review"){
+    if(state.status!=="awaiting_code_review" || state.stage!=="release"){
+      await comment("There is no pending code/security review; use /status.");return;
+    }
+    try{
+      const target=reviewTarget(state.preview);
+      state.codeReview=acceptHumanReview(state.codeReviewRequest,cmd.arg,target,who,Number(payload.comment?.id));
+    }catch(e){await comment("Review was not accepted: "+errorText(e));return;}
+    state.codeReviewRequest=null;state.status="working";
+    if(id)state.eventIds=[...state.eventIds,id].slice(-100);
+    persist("buildkit: separate code/security review acknowledged");
+    await comment("Code/security review acknowledgment recorded for the reviewed artifact. Evaluating production readiness.");
     go=true;
   }else if(cmd?.name==="attest"){
     if(cmd.arg!=="COMPLIANCE-REVIEWED"||state.stage!=="release"){
