@@ -2,6 +2,8 @@
 
 ## What it does
 
+**Repo-owner one-time setup:** In the Buildkit source repository, enable **Settings → General → Template repository** if you want the GitHub **Use this template** button. The harness works from an ordinary copied repository too; the connector cannot toggle the template property.
+
 Use **GitHub Issues** for instructions and approvals, **Actions** for execution, and one review **pull request** per product idea. Output and approvals live on `buildkit/issue-N`; `main` is never modified automatically.
 
 1. Create a **private** repository from Buildkit (or copy the harness + playbook into an existing repo).
