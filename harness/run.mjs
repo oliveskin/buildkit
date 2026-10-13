@@ -286,9 +286,11 @@ export async function run(context={}) {
       if(context.previewForTest){
         const demo=await context.previewForTest();
         verifyBrowserResults(demo,demo.previewUrl);
+        const sourceSha=git("rev-parse","HEAD");
+        const artifact=demo.artifact;
         write("docs/evidence/PREVIEW.json",JSON.stringify({...demo,outcome:"GO",
-          sourceSha:git("rev-parse","HEAD")},null,2)+"\n");
-        state.preview={url:demo.previewUrl,sourceSha:git("rev-parse","HEAD"),report:"docs/evidence/PREVIEW.json"};
+          sourceSha,artifact},null,2)+"\n");
+        state.preview={url:demo.previewUrl,sourceSha,artifact,report:"docs/evidence/PREVIEW.json"};
         await gate("preview","Simulated browser result used by offline harness tests ONLY.");
       }else{
         state.status="awaiting_preview";state.previewSourceSha=git("rev-parse","HEAD");state.gate=null;
