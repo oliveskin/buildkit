@@ -12,7 +12,7 @@ import { assertClean } from "./security-gate.mjs";
 import { classifyProduct, assessRelease } from "./compliance.mjs";
 import { verifyBrowserResults, validWorkerName } from "./cloudflare.mjs";
 import {validateExecutionPlan,validateInfrastructurePlan,adapterSupport,provisionNeeded,executionDigest} from "./execution-plan.mjs";
-import {resourceNamespace,resolvedBindings} from "./cloudflare-provision.mjs";
+import {resourceNamespace,resolvedBindings,assertScopedResources} from "./cloudflare-provision.mjs";
 import {buildRecipe} from "./build-adapters.mjs";
 import {readyBlocks,remainingBlocks,BLOCKS_PER_RUN} from "./blocks.mjs";
 import { researchCacheKey, shouldRefreshResearch, invalidateFrom } from "./research-control.mjs";
@@ -276,6 +276,7 @@ export async function run(context={}) {
         "If the chosen provider has no provisioning adapter, describe it as external, not Cloudflare.");
       const infrastructure=JSON.parse(read("docs/INFRA_PLAN.json"));
       validateInfrastructurePlan(infrastructure,execution);
+      if(infrastructure.provider==="cloudflare")assertScopedResources(infrastructure,repo,number);
       await gate("architecture","Review PRD, HLD, executed feasibility and explicit technology-neutral "+
         "EXECUTION_PLAN/INFRA_PLAN. Cloudflare is optional. Inspect selected build/preview/deploy "+
         "adapters, data needs, dependencies, costs, and any missing automation before approving.");
