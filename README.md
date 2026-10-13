@@ -1,9 +1,32 @@
 # Buildkit — the solo AI product builder's playbook
 
-## Guided GitHub harness (new)
+## Start here: build a product through GitHub
 
-**Start here if you want Buildkit to manage the steps for you:** [GitHub-native harness setup](docs/HARNESS.md). In a product repository created from this template, open **Issues → Build a product** and describe an idea. The Action produces reviewable scope/PRD/HLD/LLD and a draft PR, then pauses for `/approve CODE` or `/revise ...` at each major gate. One coding-provider API key is required; it never auto-merges or auto-deploys. See [workflow](.github/workflows/buildkit.yml) and [tests](harness/core.test.mjs).
+**No local setup or prompt copying needed.** Buildkit uses GitHub Issues as a guided interface and GitHub Actions to run an AI coding agent. It asks you to approve important outputs instead of asking you what to do next.
 
+### Your first product (about four setup steps)
+
+1. **[Use this template](https://github.com/oliveskin/buildkit/generate)** to create a new **private** repository for your idea. Do this in your own GitHub account. If the template button is missing, the maintainer must enable **Settings → General → Template repository** on the source repository (or you can copy the files).
+2. In **your new product repository**, open **Settings → Actions → General**. Ensure Actions are enabled. Under **Workflow permissions**, enable **Allow GitHub Actions to create and approve pull requests**, then Save. Buildkit's workflow already requests scoped `contents: write`, `issues: write`, and `pull-requests: write`. If your account/org restricts those scopes, adjust the setting with your administrator.
+3. Go to **Settings → Secrets and variables → Actions → New repository secret**. Add **one**: `OPENAI_API_KEY` (Codex, default) **or** `ANTHROPIC_API_KEY`. For Claude add an **Actions repository variable** `BUILDKIT_PROVIDER=claude`. Model usage is separately billed. Never paste keys in Issues.
+4. Open **Issues → New issue → Build a product**, describe your idea in a sentence or two, and submit. The GitHub Action starts automatically. Watch the issue for updates and the Actions tab for logs.
+
+### What happens next?
+
+| Stage | Buildkit does | Your action |
+|---|---|---|
+| **1. Direction** | Proposes target user, MMFS, exclusions and risks in `docs/DIRECTION.md` | Review the draft PR. Comment `/approve CODE` or `/revise your feedback` on the **issue** |
+| **2. Product & architecture** | Generates PRD, HLD and feasibility notes | Approve or request changes |
+| **3. Implementation** | Writes LLD, builds up to 3 bounded blocks, runs npm build/tests and optionally uses a second model for review | Inspect code, tests and preview evidence; approve or revise |
+| **4. Manual release** | Marks the work ready for release review | Independently verify, merge and deploy yourself |
+
+The approval code is supplied in each Buildkit issue comment. Approval is tied to the exact generated content. Commands: `/start`, `/status`, `/approve CODE`, `/revise feedback`, `/resume` (after a blocked step).
+
+**Important:** An automatically generated draft PR is **not** a running product. Buildkit does **not** merge, deploy, provision paid infrastructure, or guarantee that every generated app works without review. Never publish without independent testing and checking costs and security. If your issue receives no response, check **Actions → Buildkit · guided product build** for failures and [follow the troubleshooting guide](docs/HARNESS.md#troubleshooting).
+
+**Maintainer setup:** Enabling the GitHub template flag is a one-time action on `oliveskin/buildkit`; workflow permissions and API keys are configured **separately in each new user's product repository**. See [full harness setup](docs/HARNESS.md) for screenshots-free exact paths and recovery steps.
+
+---
 
 **Go from an idea to a working, deployed, market-testable product with Claude Code, Codex, GitHub, Cloudflare, Hugging Face and Modal — without building unnecessary infrastructure.**
 
@@ -11,7 +34,7 @@ This is a **hands-on kit**, not a course. It includes reusable prompts, PRD/HLD/
 
 > **Principle:** Build the smallest *marketable* feature set (MMFS), not the smallest half-working demo. The product needs one real, complete user journey, trustworthy behaviour and a live deployment.
 
-## Start in five minutes
+## Manual build playbook (optional: skip if using the guided GitHub harness)
 
 1. Read **[START-HERE.md](START-HERE.md)** — step-by-step plan, commands, low-cost stack and reference links.
 2. Read **[PROMPTS.md](PROMPTS.md)** — copy/paste prompts 01–14 for research, planning, coding, reviewing and release.
