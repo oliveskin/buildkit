@@ -15,7 +15,7 @@ const infra={schema:1,provider:'cloudflare',summary:'Attach an owned Cloudflare 
 test('custom hostname requires owned active zone, checks conflicts, no overwrites',async()=>{
  const calls=[];
  const request=async (url,o)=>{
-   const p=new URL(url).pathname;calls.push([o.method,p]);
+   const p=new URL(url).pathname.replace('/client/v4','');calls.push([o.method,p]);
    const result=p==='/zones/'+zoneId?{name:'example.com',status:'active',account:{id:account}}:
      p.endsWith('/dns_records')?[]:p.endsWith('/workers/domains')&&o.method==='GET'?[]:
      p.endsWith('/workers/domains')?{hostname:'app.example.com'}:[];
