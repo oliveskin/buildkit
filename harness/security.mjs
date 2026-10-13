@@ -48,12 +48,14 @@ export function makeTestSnapshot(root, files) {
     return target;
   } catch(e) { fs.rmSync(target,{recursive:true,force:true}); throw e; }
 }
-export function containerArgs(directory, args, network=false) {
+export function containerArgs(directory, args, network=false, image='node:22-bookworm-slim') {
   if(!path.isAbsolute(directory) || directory.includes(",")) throw new Error("Invalid snapshot directory.");
   return ["run","--rm","--cap-drop=ALL","--security-opt=no-new-privileges",
     "--pids-limit=256","--memory=2g","--cpus=2","--read-only",
     "--network="+(network?"bridge":"none"),"--tmpfs","/tmp:rw,nosuid,nodev,size=512m",
     "--user",`${process.getuid?.()??1000}:${process.getgid?.()??1000}`,
     "--mount",`type=bind,source=${directory},target=/workspace`,"--workdir","/workspace",
-    "--env","HOME=/tmp","--env","CI=true","node:22-bookworm-slim",...args];
+    "--env","HOME=/tmp","--env","CI=true",
+    "--env","PYTHONPATH=/workspace/.bkdeps","--env","CARGO_HOME=/workspace/.cargo",
+    "--env","CARGO_TARGET_DIR=/workspace/.target",image,...args];
 }
