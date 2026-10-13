@@ -290,16 +290,26 @@ test("new search access before scope approval automatically refreshes displayed 
   }finally{f.cleanup();}
 });
 
-test("missing Cloudflare Worker identity blocks implementation and resumes after configuration",async()=>{
+test("Cloudflare Worker identity comes from HLD, not a mandatory repository-wide setting",async()=>{
   const f=fixture();try{
     await f.invoke();await f.approve();
-    await assert.rejects(
-      f.invoke("/approve "+f.state.gate.code,{BUILDKIT_WORKER_NAME:""}),
-      /BUILDKIT_WORKER_NAME/);
-    assert.equal(f.state.status,"blocked");
-    assert.equal(f.state.stage,"implementation");
-    assert.equal(f.state.completedBlocks.length,0);
-    await f.invoke("/resume",{BUILDKIT_WORKER_NAME:"bk-fixture-app"});
+    await f.invoke("/approve "+f.state.gate.code,{BUILDKIT_WORKER_NAME:""});
     assert.equal(f.state.gate.stage,"preview");
+    assert.equal(f.state.completedBlocks.length,2);
+  }finally{f.cleanup();}
+});
+test("approved product can contain seven blocks across four checkpointed runs",async()=>{
+  const f=fixture();f.blockCount=7;try{
+    await f.invoke();await f.approve();
+    await f.approve();
+    assert.equal(f.state.status,"blocked");
+    assert.equal(f.state.completedBlocks.length,2);
+    assert.equal(f.autoContinuations.length,1);
+    await f.invoke("/resume");assert.equal(f.state.completedBlocks.length,4);
+    await f.invoke("/resume");assert.equal(f.state.completedBlocks.length,6);
+    await f.invoke("/resume");assert.equal(f.state.completedBlocks.length,7);
+    assert.equal(f.state.gate.stage,"preview");
+    assert.equal(f.autoContinuations.length,3);
+    assert.equal(new Set(f.state.completedBlocks.map(x=>x.id)).size,7);
   }finally{f.cleanup();}
 });
