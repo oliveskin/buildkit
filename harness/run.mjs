@@ -92,6 +92,7 @@ function agent(provider,task,readOnly=false){
   }else if(provider==="claude"){
     if(!env.ANTHROPIC_API_KEY)throw Error("Set ANTHROPIC_API_KEY repository secret.");
     if(!available("claude"))command("bash",["-lc","curl -fsSL https://claude.ai/install.sh | bash"],{timeout:180000});
+    env.PATH=env.HOME+"/.local/bin:"+env.PATH;
   }else throw Error("Unknown provider: "+provider);
   const args=provider==="codex"?["exec","--skip-git-repo-check",
       ...(readOnly?["--sandbox","read-only"]:["--full-auto"]),"-"]:
