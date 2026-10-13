@@ -24,10 +24,10 @@ Guided mode: generated after architecture approval, reviewed with code; no separ
 ## Cross-block integration contracts
 [Typed interfaces; order to merge; integration owner]
 
-## Test plan
+## Reproducible deployment output\n[package.json buildkit.deploymentDirectory, default dist/buildkit; no_bundle built Worker/asset payload, hashed source/artifact identity, preview-safe Cloudflare bindings]\n\n## Test plan
 [Unit, integration, E2E/browser, contract, security, failure, load]
 
 ## Implementation versus release
 Implementation: all approved MMFS requirements mapped to blocks, real build/tests with command evidence, no silent scope change.
-Code review: inspect assertion quality, UX and complete diff; identify any missing independent/browser verification.
-Release: separately review/merge, deploy exact SHA to the correct project, verify real user journeys and rollback. The harness never marks deployment complete.
+Preview: verify immutable compiled output, SHA-256 payload digest, Playwright user journeys and UX approval.\nCode/security review: separate from UX; review the full diff, authorization, dependency/secret checks and the version-bound artifact. Record an independent second-provider PASS or an explicit human code/security acknowledgment.
+Release: approve the exact reviewed source/artifact, allow only metadata changes after approval, merge the product PR, deploy the same browser-tested artifact (no credentialed rebuild), then record actual production verification and rollback obligations. The harness marks deployment complete only after the release job reports success.
