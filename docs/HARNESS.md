@@ -12,7 +12,7 @@ GitHub Issues are the user's interface; Actions handles execution; draft PRs pre
 
 **Reproducible output:** The generated npm app declares `package.json` `buildkit.deploymentDirectory` (default `dist/buildkit`). Its `npm run build` emits a self-contained payload with a built JavaScript Worker entry or static assets and a `wrangler.json` configured with `no_bundle: true`. A secret-free job builds and hashes that output; preview and production jobs upload **the same artifact bytes** without rerunning application builds. The artifact manifest records the source commit, worker name and payload digest.
 
-**Before a live preview**, configure Cloudflare (below). The harness stops rather than using another project/account or silently deploying production.
+**Before approving the architecture**, set the exact `BUILDKIT_WORKER_NAME` repository variable: approval immediately starts implementation, which creates the matched `wrangler.json`. Preview credentials can be configured later, before browser review. The harness stops rather than inventing a Worker or silently using another account.
 
 ### Cloudflare credentials and target
 
