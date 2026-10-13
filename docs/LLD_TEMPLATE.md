@@ -1,5 +1,6 @@
 # LLD — [product]
-Status: DRAFT / APPROVED | Based on PRD [sha], HLD [sha]
+Status: DRAFT / REVIEWED | Based on PRD [digest/sha], HLD [digest/sha]
+Guided mode: generated after architecture approval, reviewed with code; no separate LLD approval gate.
 
 ## Data tables and migrations
 [Actual columns/types, constraints, indexes, tenant ownership, migration plan]
@@ -26,5 +27,7 @@ Status: DRAFT / APPROVED | Based on PRD [sha], HLD [sha]
 ## Test plan
 [Unit, integration, E2E/browser, contract, security, failure, load]
 
-## Exact definition of done
-[Acceptance tests pass; independent diff review; merged main; deployed correct project; smoke tested]
+## Implementation versus release
+Implementation: all approved MMFS requirements mapped to blocks, real build/tests with command evidence, no silent scope change.
+Code review: inspect assertion quality, UX and complete diff; identify any missing independent/browser verification.
+Release: separately review/merge, deploy exact SHA to the correct project, verify real user journeys and rollback. The harness never marks deployment complete.

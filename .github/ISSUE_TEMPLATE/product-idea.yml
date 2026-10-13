@@ -1,23 +1,25 @@
 name: Build a product
-description: Tell Buildkit what you want to build; it will research and ask for approvals.
+description: Propose a small product; Buildkit generates specifications and asks for approvals.
 title: "[Product] "
 body:
   - type: markdown
     attributes:
       value: |
-        Describe your idea. Buildkit proposes scope and asks for your approval; it won't deploy production automatically.
+        Use your own product repository. Configure Actions and one provider API key first.
+        Buildkit proposes scope, writes specifications and generates code for review.
+        It does not automatically deploy a website. Do not paste credentials here.
   - type: textarea
     id: idea
     attributes:
       label: What product do you want?
-      description: Who needs it, and what should it do? A few sentences is enough.
-      placeholder: An app that helps small businesses...
+      description: Who needs it, and what should the first version do?
+      placeholder: A simple shared task tracker for a small team...
     validations:
       required: true
   - type: textarea
     id: constraints
     attributes:
       label: Anything that matters? (optional)
-      description: Preferred stack, budget, existing integrations, languages or privacy requirements.
+      description: Budget, stack, integrations, languages, privacy or explicit exclusions.
     validations:
       required: false
