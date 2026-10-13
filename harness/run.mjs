@@ -325,7 +325,8 @@ export async function run(context={}) {
       (prURL?". [Draft PR]("+prURL+")":"")+(state.gate?". /approve "+state.gate.code:"")+
       (state.lastError?". Last error: "+state.lastError:"")+". No automatic merge or deployment.");return;
   }
-  if(state.status==="release-ready"){await comment("Manual release review pending. Nothing was merged or deployed.");return;}
+  if(state.status==="release-ready"){await comment("Production release complete in test harness. Check actual Actions deployment status for real projects.");return;}
+  if(state.status==="deploy_pending"){await comment("Production workflow dispatched for approved commit. Check Actions for actual release result.");return;}
   let go=false;
   if((labeled||cmd?.name==="start")&&state.status==="new")go=true;
   else if(cmd?.name==="approve"){
@@ -336,15 +337,44 @@ export async function run(context={}) {
     for(const p of STAGE_FILES[gateState.stage]||[])state.approvedDocs[p]=digest(inspectFile(root,p));
     state.history.push({time:new Date().toISOString(),event:"approved",stage:gateState.stage,by:who,digest:gateState.digest,revision:gateState.revision});
     state.stage=GATE_NEXT[gateState.stage];state.gate=null;state.feedback="";
-    if(state.stage==="release-ready"){
-      if(id)state.eventIds.push(id);state.status="release-ready";persist("buildkit: code review accepted");
-      await comment("Code review approved. Independently verify, merge and deploy manually. No browser/live deployment verification occurred.");return;
+    if(gateState.stage==="preview")state.previewReviewedBy=who;
+    if(state.stage==="deploying"){
+      if(id)state.eventIds.push(id);
+      state.status="deploy_pending";state.releaseApprovedBy=who;
+      state.releaseApprovedDigest=gateState.digest;
+      persist("buildkit: authorized exact production release #"+number);
+      if(context.releaseForTest){
+        const fake=await context.releaseForTest();
+        state.status=fake?.deployed?"release-ready":"blocked";
+        persist("buildkit: simulated release only");
+        await comment("Offline test release simulation.");return;
+      }
+      await comment("Production release explicitly approved. [Deployment workflow](https://github.com/"+repo+
+        "/actions). Approved exact commit: "+checkpoint);
+      await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
+        {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
+      return;
     }
     go=true;
   }else if(cmd?.name==="revise"){
-    if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix a blocker, then /resume.");return;}
-    if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5–2000 characters of feedback.");return;}
-    state.feedback=cmd.arg;state.revision++;state.planDigest=null;state.completedBlocks=[];go=true;
+    if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix blocker, then /resume.");return;}
+    if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
+    state.feedback=cmd.arg;state.revision++;
+    if(state.stage==="release"){state.stage="implementation";state.previewReviewedBy=null;}
+    state.planDigest=null;state.completedBlocks=[];
+    for(const p of ["docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"]){
+      if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+    }
+    go=true;
+  }else if(cmd?.name==="attest"){
+    if(cmd.arg!=="COMPLIANCE-REVIEWED"||state.stage!=="release"){
+      await comment("For regulated products, after qualified human review use /attest COMPLIANCE-REVIEWED.");return;
+    }
+    state.complianceReview={confirmed:true,by:who,profileDigest:state.complianceProfileDigest,
+      at:new Date().toISOString()};
+    persist("buildkit: recorded qualified-review attestation for #"+number);
+    await comment("A human attestation was recorded for this profile. "+
+      "Buildkit does not certify legal compliance; comment /resume after reviewing any blocker.");return;
   }else if(cmd?.name==="resume"){
     if(!["blocked","working"].includes(state.status)){await comment("Only blocked or interrupted work can resume.");return;}
     if(state.status==="working"&&state.runId&&state.runId!==env.GITHUB_RUN_ID){
