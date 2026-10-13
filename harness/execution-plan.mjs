@@ -65,9 +65,18 @@ export function validateInfrastructurePlan(infra,execution){
     throw Error('No-resource plan cannot contain provisioning operations.');
   if(infra.provider==='cloudflare'&&execution.deploy.adapter!=='cloudflare-workers')
     throw Error('Cloudflare provisioning must be linked to an approved Cloudflare deployment component.');
-  if(infra.provider!=='cloudflare'&&infra.resources.length)
-    throw Error('External infrastructure needs its own adapter, not a Cloudflare API call.');
+
   const ids=new Set(),names=new Set(),bindings=new Set();
+  if(infra.provider==='external'){
+    for(const r of infra.resources){
+      if(!/^R-[0-9]{2,}$/.test(r.id||'')||ids.has(r.id)||!words(r.kind,2)||!words(r.name,3)||
+         !words(r.reason,12))
+        throw Error('External resource needs an ID, kind, name and explicit rationale for the chosen provider.');
+      ids.add(r.id);
+    }
+    if(infra.domain)throw Error('External custom domains require an explicit provider adapter rather than Cloudflare settings.');
+    return infra;
+  }
   for(const r of infra.resources){
     if(!resourceKinds.has(r.kind)||!/^R-[0-9]{2,}$/.test(r.id||'')||ids.has(r.id)||
        !bindingPattern.test(r.binding||'')||bindings.has(r.binding)||
@@ -90,7 +99,7 @@ export function validateInfrastructurePlan(infra,execution){
   return infra;
 }
 export function provisionNeeded(plan){
-  return plan?.provider==='cloudflare' && (plan.resources.length>0||Boolean(plan.domain));
+  return !!plan && plan.provider!=='none' && (plan.resources.length>0||Boolean(plan.domain));
 }
 export function requireAdapter(plan,kind){
   const {missing}=adapterSupport(plan);
