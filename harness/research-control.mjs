@@ -6,8 +6,8 @@ export function researchCacheKey(state,env) {
     revision:env.BUILDKIT_RESEARCH_REVISION||''});
 }
 export function shouldRefreshResearch(state,env,evidence,{retry=false}={}) {
-  return !evidence || !state.researchCacheKey ||
-    state.researchCacheKey!==researchCacheKey(state,env) ||
+  return !evidence || !state.researchCacheFingerprint ||
+    state.researchCacheFingerprint!==researchCacheKey(state,env) ||
     (retry&&state.stage==='direction'&&((evidence.failures||[]).length>0||(evidence.gaps||[]).length>0));
 }
 export function invalidateFrom(state,stage,{actor,reason,at=new Date().toISOString()}={}) {
@@ -25,7 +25,7 @@ export function invalidateFrom(state,stage,{actor,reason,at=new Date().toISOStri
     'releaseApprovedDigest','releaseResult','dispatch','finalEvidence'])delete state[key];
   state.completedBlocks=[];state.gate=null;state.lastError=null;state.stage=stage;state.status='new';
   state.revision=(state.revision||0)+1;
-  if(stage==='direction')delete state.researchCacheKey;
+  if(stage==='direction')delete state.researchCacheFingerprint;
   state.history.push({event:'outputs_invalidated',stage,by:actor,reason,at,invalidated});
   return [...new Set(files)];
 }
