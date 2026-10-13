@@ -192,9 +192,15 @@ export async function run(context={}) {
       generate(provider,["docs/HLD.md"],"Use PRD and HLD_TEMPLATE: cheapest sensible architecture, integrations, auth, privacy and costs.");
       if(!read("spikes/plan.json")){
         generate(provider,["spikes/plan.json"],"From approved DIRECTION, new PRD and HLD define schema:1 and "+
-          "1–5 concrete critical feasibility probes. Allowed kinds: https_read (URL + expectedStatus"+
+          "1–5 real feasibility probes. Critical probes must use node_test (executed meaningful assertions) "+
+          "or http_contract (authorized endpoint request, status and content assertion). "+
+          "Reading documentation, repository metadata or HF model cards may support research "+
+          "but NEVER proves a critical integration or inference capability. "+
+          "Allowed kinds: https_read (noncritical, docs), http_contract (approved HTTPS endpoint"+
+          ", expectedStatus, expectedText or JSON path assertion),"+
           " + expectedText), github_repository (repository URL), hf_model (model URL), node_test"+
           " (spikes/NAME.test.mjs). Each item needs id, risk explanation >=12 chars, critical boolean,"+
+          " and for critical probes a detailed, measurable assertion,"+
           " and exact test inputs. No fake tests, no credential writes. Create executable "+
           "spikes/NAME.test.mjs if a node_test is chosen. Use allowed public hosts or"+
           " those the user explicitly approved via BUILDKIT_SPIKE_HOSTS. "+

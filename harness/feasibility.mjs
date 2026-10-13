@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import {safeSourceUrl} from "./research.mjs";
 
-const allowedKinds=new Set(["https_read","github_repository","hf_model","node_test"]);
+const allowedKinds=new Set(["https_read","github_repository","hf_model","node_test","http_contract"]);
 const inputId=id=>/^[A-Z][A-Z0-9-]{1,28}$/.test(id||"");
 export function verifySpikePlan(plan) {
   if(plan?.schema!==1||!Array.isArray(plan.probes)||plan.probes.length<1||plan.probes.length>5)
@@ -12,7 +12,19 @@ export function verifySpikePlan(plan) {
       throw Error("Invalid feasibility probe metadata");
     ids.add(p.id);
     if(p.critical!==true && p.critical!==false)throw Error("Probe critical must be boolean.");
-    if(["https_read","github_repository","hf_model"].includes(p.kind) && !safeSourceUrl(p.url))
+    if(p.critical && !["node_test","http_contract"].includes(p.kind))
+      throw Error("Critical risk cannot be verified by merely reading docs, repositories or a model card; run a real contract or executable test.");
+    if(p.critical && (!p.assertion || String(p.assertion).trim().length<12))
+      throw Error("Critical probe needs an explicit observable passing assertion.");
+    if(p.kind==="http_contract" && (!p.url||!safeSourceUrl(p.url)||
+      !["GET","POST"].includes(p.method||"GET")||
+      (p.method==="POST"&&typeof p.body!=="string")))
+      throw Error("http_contract needs approved HTTPS endpoint, method and optional body.");
+    if(p.kind==="http_contract" && p.expectedText==null && !p.expectedJsonPath)
+      throw Error("HTTP contract needs expectedText or expectedJsonPath matching a result.");
+    if(p.expectedJsonPath && !/^[a-zA-Z_][\w]*(\.[a-zA-Z_][\w]*){0,5}$/.test(p.expectedJsonPath))
+      throw Error("Unsupported JSON path assertion.");
+    if(["https_read","github_repository","hf_model","http_contract"].includes(p.kind) && !safeSourceUrl(p.url))
       throw Error("Probe URL must be a public HTTPS URL");
     if(p.kind==="github_repository"&&!/^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/.test(p.url))
       throw Error("GitHub probe needs a repository URL");
@@ -50,9 +62,18 @@ export async function executeSpikes(plan,{request=fetch,runNodeTest=async()=>{th
           url="https://api.github.com/repos/"+p.url.replace("https://github.com/","").replace(/\/$/,"");
         if(p.kind==="hf_model")url="https://huggingface.co/api/models/"+p.url.replace("https://huggingface.co/","");
         if(!allowedProbeHost(url,customHosts))throw Error("Host not explicitly approved for probe");
-        const response=await request(url,{redirect:"error",headers:{Accept:"application/json,text/plain,text/html"},
+        const method=p.kind==="http_contract"?(p.method||"GET"):"GET";
+        const response=await request(url,{redirect:"error",method,
+          body:method==="POST"?p.body:undefined,
+          headers:{Accept:"application/json,text/plain,text/html",...(p.contentType?{"Content-Type":p.contentType}:{})},
           signal:AbortSignal.timeout(7000)});
         const body=(await response.text()).slice(0,12000);
+        if(p.expectedJsonPath){
+          let value=JSON.parse(body);
+          for(const part of p.expectedJsonPath.split("."))value=value?.[part];
+          if(JSON.stringify(value)!==JSON.stringify(p.expectedValue))
+            throw Error("JSON contract failed at "+p.expectedJsonPath);
+        }
         if(response.status!==(p.expectedStatus||200))throw Error("HTTP "+response.status);
         if(p.expectedText && !body.includes(p.expectedText))throw Error("Expected response text absent");
         evidence="HTTP "+response.status+"; content sha256="+createHash("sha256").update(body).digest("hex");

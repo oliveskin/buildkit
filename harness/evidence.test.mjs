@@ -29,8 +29,13 @@ test("honest research gap forces UNVERIFIED labeling",async()=>{
  assert.throws(()=>verifyResearch(e,"Found [E-001]"),/UNVERIFIED/);
  assert.ok(verifyResearch(e,"Market UNVERIFIED [E-001]").gaps.length);
 });
-const plan={schema:1,probes:[{id:"RISK-1",risk:"Live API connectivity for calendar is required",kind:"https_read",
-  url:"https://developers.cloudflare.com/workers/",critical:true,expectedStatus:200,expectedText:"Cloudflare"}]};
+const plan={schema:1,probes:[{id:"RISK-1",risk:"Live API response contract must be verified",kind:"http_contract",
+  url:"https://developers.cloudflare.com/workers/",method:"GET",critical:true,
+  assertion:"HTTP status 200 and Cloudflare response text",expectedStatus:200,expectedText:"Cloudflare"}]};
+test("metadata-only checks cannot prove critical feasibility",()=>{
+ assert.throws(()=>verifySpikePlan({schema:1,probes:[{...plan.probes[0],kind:"https_read"}]}),/Critical risk/);
+ assert.throws(()=>verifySpikePlan({schema:1,probes:[{...plan.probes[0],kind:"hf_model"}]}),/Critical risk/);
+});
 test("spikes reject implicit / unsafe destinations",()=>{
  assert.equal(verifySpikePlan(plan).length,1);
  assert.equal(allowedProbeHost("https://api.github.com/repos/a/b"),true);
@@ -45,7 +50,8 @@ test("executed spike must prove response; critical failures block",async()=>{
 });
 test("node spike uses observable test result, not generated prose",async()=>{
  const p={schema:1,probes:[{id:"LOCAL-1",risk:"Core logic needs proof with runnable test",kind:"node_test",
-   file:"spikes/sanity.test.mjs",critical:true}]};
+   file:"spikes/sanity.test.mjs",critical:true,
+   assertion:"Node test completes with meaningful passing assertions"}]};
  assert.equal((await executeSpikes(p,{runNodeTest:async()=>({passed:true,output:"3 tests passed"})})).decision,"GO");
  assert.equal((await executeSpikes(p,{runNodeTest:async()=>({passed:false,error:"failed"})})).decision,"BLOCK");
 });
