@@ -460,18 +460,24 @@ export async function run(context={}) {
     }
     state.lastError=null;
     if(state.stage==="deploying"){
-      if(state.status!=="blocked"){await comment("Release not blocked.");return;}
-      state.status="deploy_pending";
-      persist("buildkit: retrying approved production deployment");
+      if(!state.releaseRequest){await comment("Original approved release request missing. Do not dispatch a different commit.");return;}
       if(context.releaseForTest){
-        state.status="release-ready";
-        persist("buildkit: simulated release retry");
-      }else{
-        await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
-          {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
-        await comment("Retrying the separately approved release. Review the Actions run.");}
+        const result=await context.releaseForTest();
+        state.status=result?.deployed?"release-ready":"blocked";
+        persist("buildkit: simulated release retry");return;
+      }
+      await sendWorkflow({state,request:state.releaseRequest,api,persist,comment,retry:true});
       return;
     }
+    if(state.stage==="implementation"&&state.previewRequest){
+      if(context.previewForTest){
+        state.previewRequest=null;go=true;
+      }else{
+        await sendWorkflow({state,request:state.previewRequest,api,persist,comment,retry:true});
+        return;
+      }
+    }
+    if(state.stage==="direction")state.retryResearch=true;
     go=true;
   }else if(labeled||cmd?.name==="start"){await comment("Already initialized. Use /status.");return;}
   if(!go)return;
