@@ -13,7 +13,7 @@ The user must authorize the Cloudflare account and any resources; Buildkit canno
 
 ## Example config
 
-The agent generates a real, buildable Worker config with `wrangler.json` and a preview block:
+The agent generates a source `wrangler.json` and a self-contained, deployable `dist/buildkit` output. An illustrative source config with preview bindings:
 
 ```json
 {
@@ -31,12 +31,12 @@ See [official Cloudflare preview setup](https://developers.cloudflare.com/worker
 
 ## What happens automatically
 
-1. The build stage completes the application, unit/build checks, requirement traceability, and a real `tests/e2e.spec.mjs`.
-2. `buildkit-preview.yml` checks the exact candidate SHA, configuration, dependency vulnerabilities and secret scan.
-3. With preview-only credentials, Wrangler publishes to a named **Workers Preview**.
+1. The build stage completes the application, unit/build checks, requirement traceability, a real `tests/e2e.spec.mjs`, and `package.json` `buildkit.deploymentDirectory` (default `dist/buildkit`). The built output contains a compiled .js Worker entry and/or static assets plus `wrangler.json` with `no_bundle: true`.
+2. `buildkit-preview.yml` checks the exact candidate SHA, configuration, dependency vulnerabilities and secrets; it builds in a credential-free job, hashes all deployment-output files, and uploads an immutable artifact with a source SHA and payload digest.
+3. With preview-only credentials, Wrangler publishes **only those checked artifact bytes** to a named **Workers Preview** without rerunning npm build scripts.
 4. Playwright opens the URL, captures desktop/mobile screenshots, records page exceptions, and runs at least two user-journey tests.
 5. The browser workflow saves evidence to the product branch and posts the URL to the original issue. Approve or revise only after inspecting it. The URL is normally accessible publicly: never populate it with real sensitive data.
-6. After the human preview and separate release approval, `buildkit-release.yml` verifies the exact unchanged app/approved version, reruns security checks, merges the PR, deploys production Worker with the **production** credential, and smoke-tests the returned URL. A failure is reported as failure, not a successful release.
+6. After separate UX approval, obtain a distinct code/security review (second provider or explicit human `/review CODE`). After the separate production approval, `buildkit-release.yml` verifies the reviewed source and hashed artifact, reruns security checks, permits only controller metadata changes, merges the PR, uploads the **same preview-tested bytes** with the production credential, and smoke-tests the returned URL. A failure is reported as failure, not a successful release.
 
 ## Known boundaries
 
