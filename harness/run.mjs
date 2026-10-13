@@ -298,8 +298,9 @@ export async function run(context={}) {
           "isolated dependency/security checks and Playwright browser tests. "+
           "If setup is missing, add CLOUDFLARE_PREVIEW_TOKEN, CLOUDFLARE_ACCOUNT_ID and "+
           "BUILDKIT_WORKER_NAME in this product repository. Review happens after a real Preview URL exists.");
-        await api("POST","/actions/workflows/buildkit-preview.yml/dispatches",
-          {ref:baseBranch,inputs:{issue_number:String(number),candidate_sha:checkpoint}});
+        const request=workflowRequest("preview",checkpoint,number,baseBranch);
+        state.previewRequest=request;
+        await sendWorkflow({state,request,api,persist,comment});
       }
     }else if(state.stage==="release"){
       const profile=JSON.parse(read("docs/security/PROFILE.json"));
