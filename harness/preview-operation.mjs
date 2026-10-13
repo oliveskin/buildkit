@@ -6,6 +6,8 @@ import {newGate,cleanEnv} from './core.mjs';
 import {inspectFile} from './security.mjs';
 import {assertClean,trackedFiles} from './security-gate.mjs';
 import {loadWorkerConfig,checkPreviewIsolation,verifyBrowserResults} from './cloudflare.mjs';
+import {validateExecutionPlan,validateInfrastructurePlan} from './execution-plan.mjs';
+import {verifyProvisionedBindings} from './binding-policy.mjs';
 const env=process.env,dir=path.resolve(env.BUILDKIT_APP_PATH||'app');
 const issue=Number(env.BUILDKIT_ISSUE_NUMBER),sha=env.BUILDKIT_CANDIDATE_SHA,token=env.GITHUB_TOKEN;
 if(!Number.isSafeInteger(issue)||issue<1||!/^[0-9a-f]{40}$/.test(sha||''))throw Error('Invalid preview request.');
@@ -18,7 +20,19 @@ function preflight(){
   if(git('rev-parse','HEAD')!==sha||state.issue!==issue||state.status!=='awaiting_preview'||
     state.stage!=='implementation'||state.previewSourceSha!==git('rev-parse','HEAD^'))throw Error('Stale or unauthorized preview request.');
   if(JSON.parse(read('spikes/results.json')).decision!=='GO')throw Error('Critical feasibility evidence absent.');
-  checkPreviewIsolation(loadWorkerConfig(dir),env.BUILDKIT_WORKER_NAME||'');
+  const execution=JSON.parse(read('docs/EXECUTION_PLAN.json'));
+  const infrastructure=JSON.parse(read('docs/INFRA_PLAN.json'));
+  validateExecutionPlan(execution);validateInfrastructurePlan(infrastructure,execution);
+  if(execution.preview.adapter!=='cloudflare-workers')throw Error('Wrong preview adapter for selected architecture.');
+  const worker=execution.deploy.workerName;
+  if(env.BUILDKIT_WORKER_NAME&&env.BUILDKIT_WORKER_NAME!==worker)
+    throw Error('Worker override differs from the approved execution plan.');
+  const wrangler=loadWorkerConfig(dir);
+  checkPreviewIsolation(wrangler,worker);
+  const ledger=fs.existsSync(file('docs/infrastructure/PROVISIONED.json'))?
+    JSON.parse(read('docs/infrastructure/PROVISIONED.json')):null;
+  verifyProvisionedBindings({execution,infrastructure,ledger,wrangler});
+  if(env.GITHUB_OUTPUT)fs.appendFileSync(env.GITHUB_OUTPUT,'worker_name='+worker+'\n');
   assertClean(dir,trackedFiles(dir));return state;
 }
 function versionFiles(){
