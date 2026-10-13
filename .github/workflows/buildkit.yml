@@ -30,7 +30,7 @@ concurrency:
 jobs:
   guided-build:
     if: >-
-      (github.event_name == 'issues' && github.event.label.name == 'buildkit:idea') ||
+      (github.event_name == 'issues' && ((github.event.action == 'labeled' && github.event.label.name == 'buildkit:idea') || (github.event.action == 'opened' && startsWith(github.event.issue.title, '[Product]')))) ||
       (github.event_name == 'issue_comment' && !github.event.issue.pull_request && startsWith(github.event.comment.body, '/')) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
