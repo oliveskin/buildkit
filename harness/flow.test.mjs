@@ -75,7 +75,19 @@ function fixture(){
       if(cmd==="docker"){
         f.containerCalls++;
         assert.equal(options.env.GITHUB_TOKEN,undefined);assert.equal(options.env.OPENAI_API_KEY,undefined);
-        if(f.realContainers)return spawnSync(cmd,args,options);
+        if(f.realContainers){
+          const result=spawnSync(cmd,args,options);
+          if(result.status!==0 && args.includes("dir") && args.some(a=>String(a).includes("gitleaks"))){
+            // Diagnose the rule/path only; never print the scanner's matched secret.
+            const diag=spawnSync(cmd,[...args,"--report-format","json","--report-path","/dev/stdout"],options);
+            try{
+              const findings=JSON.parse(String(diag.stdout||"[]"));
+              const safe=findings.map(x=>({rule:x.RuleID,file:x.File})).slice(0,5);
+              process.stderr.write("Redacted Gitleaks test diagnostic: "+JSON.stringify(safe)+"\n");
+            }catch{process.stderr.write("Redacted Gitleaks test diagnostic unavailable.\n");}
+          }
+          return result;
+        }
         return {status:0,stdout:"Synthetic container result: exit 0"};
       }
       throw Error("Unexpected executable "+cmd);
