@@ -55,10 +55,6 @@ jobs:
           BUILDKIT_SEARCH_ENDPOINT: ${{ vars.BUILDKIT_SEARCH_ENDPOINT }}
           BUILDKIT_SEARCH_KEY: ${{ secrets.BUILDKIT_SEARCH_KEY }}
           BUILDKIT_SPIKE_HOSTS: ${{ vars.BUILDKIT_SPIKE_HOSTS }}
-          BUILDKIT_SEARCH_ENDPOINT: ${{ vars.BUILDKIT_SEARCH_ENDPOINT }}
-          BUILDKIT_SEARCH_KEY: ${{ secrets.BUILDKIT_SEARCH_KEY }}
-          BUILDKIT_SPIKE_HOSTS: ${{ vars.BUILDKIT_SPIKE_HOSTS }}
-          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
           BUILDKIT_DISPATCH_ISSUE: ${{ inputs.issue_number }}
           BUILDKIT_DISPATCH_COMMAND: ${{ inputs.command }}
         run: node harness/run.mjs
