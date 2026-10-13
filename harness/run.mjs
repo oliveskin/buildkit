@@ -128,7 +128,8 @@ export async function run(context={}) {
   function generate(provider,outputs,task){
     const locks=[...STAGE_FILES.direction,...STAGE_FILES.architecture].filter(p=>read(p)&&!outputs.includes(p));
     const before=digest(entries(locks));
-    agent(provider,instructions()+"\nTASK: "+task+"\nOnly write: "+outputs.join(", ")+". Start Markdown with a short decision summary.");
+    agent(provider,instructions()+"\nTASK: "+task+"\nOnly write: "+outputs.join(", ")+". "+
+      (outputs.every(p=>p.endsWith(".json"))?"Output strict JSON only, no Markdown fences.":"Start Markdown with a short decision summary."));
     for(const p of outputs)if(read(p).length<80)throw Error("Missing generated document: "+p);
     if(digest(entries(locks))!==before)throw Error("Agent modified an earlier specification.");
   }
