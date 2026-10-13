@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {researchQuery,normalizeEvidence,verifyResearch,collectResearch,safeSourceUrl} from "./research.mjs";
+import {researchQuery,normalizeEvidence,verifyResearch,collectResearch,safeSourceUrl,acceptableExternalSource} from "./research.mjs";
 import {verifySpikePlan,executeSpikes,allowedProbeHost} from "./feasibility.mjs";
 import {detectSecret} from "./security-gate.mjs";
 const github={items:[{full_name:"sample/tool",html_url:"https://github.com/sample/tool",
@@ -8,12 +8,19 @@ const github={items:[{full_name:"sample/tool",html_url:"https://github.com/sampl
   stargazers_count:100,pushed_at:"2026-10-01",archived:false}]};
 const hf=[{id:"sample/assistant",tags:["license:apache-2.0"],lastModified:"2026-10-01",downloads:50}];
 const searx={results:[{title:"Known competitor",url:"https://example.com/competitor",content:"Competes on bookings and scheduling"}]};
-const mock=async url=>({ok:true,status:200,text:async()=>JSON.stringify(url.includes("api.github.com")?github:url.includes("huggingface.co")?hf:searx)});
+const mock=async url=>({ok:true,status:200,text:async()=>JSON.stringify(
+  url.includes("api.github.com")?github:url.includes("huggingface.co")?hf:
+  url.includes("hn.algolia.com")?{hits:[]}:searx)});
 test("source normalization filters duplicates and unsafe URLs",()=>{
  const x=normalizeEvidence([{category:"oss",url:"https://github.com/a/b",title:"x",excerpt:"Documented source"},
   {category:"oss",url:"https://github.com/a/b",title:"duplicate",excerpt:"Documented source"},
   {category:"market",url:"http://localhost:8080",title:"bad",excerpt:"Documented source"}]);
  assert.equal(x.length,1);assert.ok(x[0].sha256);assert.equal(safeSourceUrl("http://127.0.0.1/a"),null);
+});
+test("untrusted source URLs cannot trigger arbitrary server-side requests",()=>{
+ assert.equal(acceptableExternalSource("https://github.com/sample/tool"),true);
+ assert.equal(acceptableExternalSource("https://evil.example.com/a"),false);
+ assert.equal(acceptableExternalSource("https://127.0.0.1/a"),false);
 });
 test("structured source acquisition and citation quality gate",async()=>{
  const e=await collectResearch("Appointment reservation scheduling for restaurants",

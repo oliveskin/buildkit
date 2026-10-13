@@ -14,6 +14,16 @@ export function safeSourceUrl(raw) {
     return u.href;
   }catch{return null;}
 }
+// User-supplied URLs are untrusted. Fetch from well-known public hosts only;
+ // arbitrary URLs may point to private networks through controlled DNS.
+export function acceptableExternalSource(url) {
+  const u=safeSourceUrl(url);
+  if(!u)return false;
+  const host=new URL(u).hostname.toLowerCase();
+  return ["github.com","raw.githubusercontent.com","huggingface.co","developers.cloudflare.com",
+    "docs.github.com","docs.python.org","developer.mozilla.org","npmjs.com",
+    "news.ycombinator.com","arxiv.org","openreview.net","cloudflare.com"].includes(host);
+}
 export function normalizeEvidence(records, timestamp=new Date().toISOString()) {
   const seen=new Set(), out=[];
   for(const record of records) {
@@ -57,6 +67,19 @@ export async function collectResearch(brief,{request=fetch,githubToken="",search
         excerpt:"Hugging Face model "+m.id+"; tags: "+cut((m.tags||[]).slice(0,10).join(", "),250)+
           "; last modified: "+(m.lastModified||"UNVERIFIED"),
         facts:{license:(m.tags||[]).find(t=>t.startsWith("license:"))||null,updatedAt:m.lastModified||null,downloads:m.downloads||0}});
+    },
+    async()=>{
+      // Public search index. HN comments are qualitative examples, NOT validation of demand.
+      const data=await getJson("https://hn.algolia.com/api/v1/search?query="+encodeURIComponent(q)+
+        "&tags=comment&hitsPerPage=5",{request});
+      for(const h of data.hits||[]){
+        if(!h.objectID)continue;
+        const excerpt=cut(String(h.comment_text||"").replace(/<[^>]*>/g," "),420);
+        if(excerpt.length<8)continue;
+        records.push({category:"market",title:cut(h.story_title||"HN discussion",150),
+          url:"https://news.ycombinator.com/item?id="+encodeURIComponent(h.objectID),
+          excerpt,facts:{kind:"anecdotal discussion",createdAt:h.created_at||null}});
+      }
     }
   ];
   if(searchEndpoint)jobs.push(async()=>{
@@ -70,7 +93,8 @@ export async function collectResearch(brief,{request=fetch,githubToken="",search
       title:s.title,url:s.url,excerpt:cut(s.content||s.snippet)});
   });
   for(const value of userLinks.slice(0,5))jobs.push(async()=>{
-    const u=safeSourceUrl(value);if(!u)throw Error("Invalid supplied source URL");
+    const u=safeSourceUrl(value);
+    if(!u||!acceptableExternalSource(u))throw Error("User source host not on evidence allowlist.");
     const data=await request(u,{redirect:"error",signal:AbortSignal.timeout(8000),
       headers:{Accept:"text/html,text/plain"}});
     if(!data.ok)throw Error("HTTP "+data.status);
@@ -84,7 +108,7 @@ export async function collectResearch(brief,{request=fetch,githubToken="",search
   const sources=normalizeEvidence(records,now);
   const categories=Object.fromEntries(["oss","model","market","user-supplied"].map(k=>[k,sources.filter(x=>x.category===k).length]));
   return {schema:1,query:q,retrievedAt:now,sources,categories,failures,
-    gaps:[...(categories.market===0?["No independently retrieved customer/competitor evidence; market demand is UNVERIFIED."]:[]),
+    gaps:[...(categories.market===0?["No retrieved customer/competitor discussion. Market demand is UNVERIFIED."]:[]),
       ...(categories.oss===0?["No verified OSS candidates found."]:[]),
       ...(categories.model===0?["No model metadata found; no model selection is justified."]:[])]};
 }
