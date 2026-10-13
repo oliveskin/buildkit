@@ -164,3 +164,29 @@ test("dispatch is refused on non-default branch",async()=>{
     assert.equal(f.calls.length,0);
   }finally{f.cleanup();}
 });
+
+test("refreshing source evidence invalidates downstream approvals and requests new direction review",async()=>{
+  const f=fixture();try{
+    await f.invoke();await f.approve();await f.approve();
+    assert.equal(f.state.gate.stage,"preview");
+    const priorCalls=f.calls.length;
+    await f.invoke("/refresh-research Include alternative sources and customers");
+    assert.equal(f.state.gate.stage,"direction");
+    assert.equal(f.state.status,"awaiting_approval");
+    assert.ok(f.state.history.some(x=>x.event==="outputs_invalidated"&&x.stage==="direction"));
+    assert.ok(f.calls.length>priorCalls,"Research change must generate a new decision");
+    assert.deepEqual(Object.keys(f.state.approvedDocs),[]);
+  }finally{f.cleanup();}
+});
+test("a verified independent second provider can satisfy security sign-off, but not browser approval",async()=>{
+  const f=fixture();try{
+    await f.invoke();await f.approve();
+    await f.invoke("/approve "+f.state.gate.code,{BUILDKIT_REVIEW_PROVIDER:"claude"});
+    assert.equal(f.state.gate.stage,"preview");
+    assert.equal(f.state.modelReview.provider,"claude");
+    await f.approve();
+    assert.equal(f.state.gate.stage,"release");
+    assert.equal(f.state.codeReview.kind,"model");
+    assert.notEqual(f.state.codeReview.provider,f.state.codeReview.builder);
+  }finally{f.cleanup();}
+});
