@@ -35,12 +35,15 @@ export function checkApproval(state, code, files) {
 export {validateBlocks} from "./blocks.mjs";
 export function permittedChange(path) {
   if (typeof path !== "string" || !path || path.includes("..") || path.startsWith("/") || path.includes("\\") || /\p{Cc}/u.test(path)) return false;
-  const forbidden = [".github", "harness", ".agents", ".claude", ".codex", ".buildkit", "node_modules", ".git", "scripts"];
+  const forbidden = [".github", "harness", ".agents", ".claude", ".codex", ".opencode", ".buildkit", "node_modules", ".git", "scripts"];
   if (forbidden.some(x=>path===x || path.startsWith(x+"/"))) return false;
+  if (/(^|\/)(\.opencode|opencode\.jsonc?)(\/|$)/.test(path))return false;
   if (["AGENTS.md","CLAUDE.md","PROMPTS.md","README.md","START-HERE.md",".gitignore"].includes(path)) return false;
   if ((/(^|\/)\.(env(\.|$)|dev\.vars|npmrc$|yarnrc|mcp\.json$)/.test(path) && !/(^|\/)\.(env|dev\.vars)\.example$/.test(path)) || /(^|\/)(id_rsa|id_ed25519|credentials\.json)(\.|$)/.test(path)) return false;
   return true;
 }
+// Kept as native adapter helpers for compatibility. Model/provider selection for
+// the guided workflow lives in model-config.mjs, not this legacy CLI selector.
 export function selectProvider(env) {
   const provider=(env.BUILDKIT_PROVIDER || (env.OPENAI_API_KEY ? "codex" : env.ANTHROPIC_API_KEY ? "claude" : "codex")).trim().toLowerCase();
   if (!["codex","claude"].includes(provider)) throw new Error("BUILDKIT_PROVIDER must be codex or claude.");
