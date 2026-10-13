@@ -10,7 +10,8 @@ test("Cloudflare preview requires explicit worker and separate preview bindings"
  assert.throws(()=>checkPreviewIsolation({...base,d1_databases:[{binding:"DB",database_id:"prod"}]},"bk-sample"),/preview bindings/);
  assert.throws(()=>checkPreviewIsolation({...base,d1_databases:[{binding:"DB",database_id:"prod"}],
    previews:{vars:{ENVIRONMENT:"preview"},d1_databases:[{binding:"DB",database_id:"prod"}]}},"bk-sample"),/isolated/);
- assert.throws(()=>checkPreviewIsolation({...base,services:[{service:"prod",binding:"BACKEND"}]},"bk-sample"),/preview bindings/);
+ assert.throws(()=>checkPreviewIsolation({...base,services:[{service:"prod",binding:"BACKEND"}]},"bk-sample"),/Service bindings/);
+ assert.throws(()=>checkPreviewIsolation({...base,previews:{vars:{ENVIRONMENT:"preview"},services:[{service:"staging",binding:"BACKEND"}]}},"bk-sample"),/Service bindings/);
 });
 test("Cloudflare URL is validated, no impersonated output",()=>{
  assert.equal(parsePreviewOutput({preview:{urls:["https://pr-1-bk-sample.user.workers.dev"]}}),

@@ -20,7 +20,11 @@ export function checkPreviewIsolation(config,approvedWorker) {
     if(config[key]!==undefined || config.previews[key]!==undefined)
       throw Error("Unsupported or production-coupled Worker setting: "+key);
   }
-  for(const key of ["d1_databases","kv_namespaces","r2_buckets","hyperdrive","vectorize","services"]){
+  // Cloudflare currently routes Preview service bindings to production Workers,
+  // even when both apps have Previews. Refuse them rather than claim isolation.
+  if ((config.services||[]).length || (config.previews.services||[]).length)
+    throw Error("Service bindings are not Preview-isolated; use a separate staging endpoint.");
+  for(const key of ["d1_databases","kv_namespaces","r2_buckets","hyperdrive","vectorize"]){
     const production=config[key]||[], preview=config.previews[key]||[];
     if(production.length && (!preview.length || production.length!==preview.length))
       throw Error("Resource "+key+" needs explicit corresponding preview bindings.");

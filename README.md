@@ -1,75 +1,70 @@
 # Buildkit
 
-**Approval-driven AI product building, directly in GitHub.** Turn an idea into PRD, HLD, LLD and reviewable code with Claude Code or Codex. You make the important decisions; Buildkit manages the next step.
+**Free, open-source, approval-driven AI product building directly in GitHub.** Start with a sentence about your idea. Buildkit guides research → PRD → HLD → verified feasibility → LLD → code → real browser preview → approved release, using Claude Code or Codex.
 
-## Start a product
+**[Use this template](https://github.com/tinmanlabsl/buildkit/generate)** · [Guided setup](docs/HARNESS.md) · [Manual building playbook](START-HERE.md) · [Why we demand evidence](docs/EVIDENCE.md)
 
-1. **[Use this template](https://github.com/tinmanlabsl/buildkit/generate)** to create your own **private product repository**.
-2. In that new repo, enable Actions and **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. Organization policy may require an administrator.
-3. Add **one Actions repository secret**: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The matching provider is selected automatically; Codex is the default with both keys. API charges are yours.
-4. Open **Issues → New issue → Build a product**, describe your idea, and submit with the `[Product]` title prefix.
-5. Review the generated summary and draft PR. Reply `/approve CODE` or `/revise your feedback` on the **issue**. Buildkit selects the next step.
+## Start in GitHub (no terminal required)
 
-**[Full setup, example walkthrough and recovery guide →](docs/HARNESS.md)**
+1. Click **Use this template** and create a **private** repository in your own account. Never build a customer's unreleased product in the shared public Buildkit repository.
+2. In **your new repo** open **Settings → Actions → General**. Enable Actions and allow GitHub Actions to create pull requests. Organization policy may require your administrator.
+3. In **Settings → Secrets and variables → Actions**, create one repository secret: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The sole configured provider is detected automatically. These are paid API keys, not necessarily covered by chat subscriptions.
+4. Open **Issues → New issue → Build a product** and write what you want. Keep the `[Product]` title. The agent researches, proposes a narrow MMFS, and posts findings for review.
+5. Reply **`/approve CODE`** or **`/revise your feedback`** on the issue. No copying prompts or files between agents.
+6. Before the browser-preview stage, add the Cloudflare **Preview** credentials and Worker name described below. Buildkit then publishes a preview, runs Playwright journeys and asks you to inspect it. A **separate explicit approval** authorizes the production release.
 
-```text
-Idea → direction approval
-     → PRD + HLD + feasibility notes → architecture approval
-     → LLD + 1–3 build blocks + npm checks → code-review approval
-     → manual review, merge and deployment
-```
+### Exactly what gets reviewed
 
-Commands: `/start` · `/status` · `/approve CODE` · `/revise feedback` · `/resume`.
+| Gate | Buildkit produces | You decide |
+|---|---|---|
+| **Direction** | Retrieved GitHub/Hugging Face source evidence, market-evidence gaps, MMFS and exclusions | Is the problem/scope worth building? |
+| **Architecture** | PRD, HLD, real feasibility probe results and a proposed cheapest stack | Are the capabilities and risks proven? |
+| **Live preview** | LLD, tested code blocks, dependency and secret checks, Cloudflare preview URL, browser screenshots and at least 2 user-journey tests | Does the product actually work? |
+| **Production release** | Security/compliance review, precise Worker and SHA, deployment impact | May Buildkit merge and deploy this reviewed version? |
 
-## What the guided workflow does
+Critical failed feasibility probes **block** implementation. Unavailable market evidence must be labelled **UNVERIFIED**. Generated browser tests are still agent-written; examine their assertions before approving. Regulated products require independent qualified human compliance review; the harness does not certify compliance.
 
-| You review | Buildkit produces |
+### One-time Cloudflare setup in **your product repository**
+
+When preview is needed (not for initial research):
+
+| GitHub Actions setting | Use |
 |---|---|
-| Product direction | Target user, smallest marketable feature set, exclusions and risks |
-| Product and architecture | PRD, HLD and feasibility notes |
-| Implementation | LLD, bounded code blocks, isolated npm build/test results and optional separate-model static review |
+| Secret `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+| Secret `CLOUDFLARE_PREVIEW_TOKEN` | Narrowly scoped Worker Preview token |
+| Variable `BUILDKIT_WORKER_NAME` | Exact Worker name matching generated `wrangler.json` |
+| Secret `CLOUDFLARE_PROD_TOKEN` | **Separate** production deploy token; only needed for approved release |
 
-Approvals bind the actual file contents. Approved specifications are protected against silent changes. Each successful block is checkpointed, so `/resume` does not discard previously verified work. A failed build is a failed Actions run. Generated npm scripts run in isolated containers without GitHub/model credentials or runner-home access.
+Buildkit creates/updates a Cloudflare Worker **Preview**, not an unrelated Cloudflare project. Any needed D1/KV/R2 bindings must reference **existing isolated preview resources**; the harness rejects production-resource reuse rather than creating paid or sensitive resources on your behalf. Review public-preview exposure before using real user data. [Cloudflare and preview guidance](docs/CLOUDFLARE.md).
 
-**Current boundary:** this is a starter harness for small Node/npm web products, not a guaranteed autonomous product factory. The code-review gate is **not a hosted preview**. Market/OSS research and real feasibility experiments need sources/access and may remain unverified. Model and assertion quality still need review. It **never auto-merges or deploys**. See [tested behaviour and remaining gaps](docs/AUDIT.md).
+### Commands on your original GitHub issue
 
-The source template is enabled on `tinmanlabsl/buildkit`. Each user's product repo needs its own Actions permissions and keys; settings and secrets are not inherited.
+`/start` · `/status` · `/approve CODE` · `/revise feedback` · `/resume` (after a blocker) · `/attest COMPLIANCE-REVIEWED` (records human compliance acknowledgment, **not** certification).
 
-## Manual playbook and reusable materials
+**What “free” means:** Buildkit is MIT-licensed, with no Buildkit hosting fee. GitHub Actions quotas, Cloudflare services, Claude/Codex API use, and optional search/model services may cost money. Set provider spending controls. [Licence](LICENSE).
 
-These are the optional local/manual route, not extra setup required for the GitHub harness.
+## What is enforced
 
-| Material | Open |
+- **Source-to-claim discipline:** retrieved evidence IDs; no invented citations; executable critical technical probes.
+- **Bounded implementation:** approved PRD/HLD cannot silently change; 1–3 ordered blocks and checkpoints; resume on failure.
+- **Secrets and dependencies:** ignore common secret files; reject protected paths, known key patterns and leaked keys; run Gitleaks and npm dependency audits. `.gitignore` alone is not a secret guarantee. See [security controls](docs/SECURITY.md).
+- **Deployment truth:** separate verified preview, exact SHA approval, production-token isolation and post-deployment HTTP check. Failed tests must not be presented as passed.
+- **Human control:** no production merge/deploy before the explicit final issue approval.
+
+**Limits:** This automated path currently targets **Cloudflare Workers-compatible Node/npm web products**. Unsupported mobile/server/GPU deployments must stop with an explicit blocker or follow the [manual playbook](START-HERE.md); a source-linked model evaluation is not a GPU benchmark. Research can still lack actual customer feedback if no search service is configured. The coding agent itself is **not** a hardened untrusted-code sandbox. No tool can guarantee secret scanning catches every possible credential. See [operations and limitations](docs/HARNESS.md).
+
+## Buildkit included materials
+
+| Where | Purpose |
 |---|---|
-| Practical build sequence, commands, low-cost stack and references | [START-HERE.md](START-HERE.md) |
-| 14 prompts: research, specification, implementation, review and release | [PROMPTS.md](PROMPTS.md) |
-| Guided first-product exercise | [FIRST-PRODUCT-EXERCISE.md](FIRST-PRODUCT-EXERCISE.md) |
-| Product specification templates | [PRD](docs/PRD_TEMPLATE.md) · [HLD](docs/HLD_TEMPLATE.md) · [LLD](docs/LLD_TEMPLATE.md) |
-| Decision, status and release records | [Decisions](docs/DECISIONS.md) · [Status](docs/STATUS.md) · [Release checklist](docs/RELEASE_CHECKLIST.md) |
-| Agent instructions | [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) |
-| Inference examples, not configured production backends | [Modal](examples/modal_inference.py) · [Cloudflare Worker](examples/cloudflare_worker_proxy.ts) |
+| [docs/HARNESS.md](docs/HARNESS.md) | Exact user setup, approval flow and recovery |
+| [docs/EVIDENCE.md](docs/EVIDENCE.md) | Research and feasibility evidence contracts |
+| [docs/SECURITY.md](docs/SECURITY.md) | Secret, authorization and compliance controls |
+| [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md) | Preview, isolated resources, live-browser QA and release |
+| [START-HERE.md](START-HERE.md) / [PROMPTS.md](PROMPTS.md) | Manual workflow and copyable prompts |
+| [docs/PRD_TEMPLATE.md](docs/PRD_TEMPLATE.md) / [HLD](docs/HLD_TEMPLATE.md) / [LLD](docs/LLD_TEMPLATE.md) | Product and engineering templates |
+| [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) | Rules for coding agents |
+| [six local skills](.agents/skills/) | Scope, anti-slop, OSS reuse, HF selection, costs, release checks |
+| [harness](harness/) / [.github/workflows](.github/workflows/) | Github-native controller, research, tests, preview/release workflows |
 
-## Six project skills
-
-| Skill | Purpose | Codex / cross-agent | Claude |
-|---|---|---|---|
-| Anti-slop | Reject fake integrations, generic UI and inert controls | [Skill](.agents/skills/anti-slop/SKILL.md) | [Skill](.claude/skills/anti-slop/SKILL.md) |
-| Scope guard | Stay within approved MMFS | [Skill](.agents/skills/scope-guard/SKILL.md) | [Skill](.claude/skills/scope-guard/SKILL.md) |
-| OSS-first | Reuse vetted components before rebuilding | [Skill](.agents/skills/oss-first/SKILL.md) | [Skill](.claude/skills/oss-first/SKILL.md) |
-| HF model evaluation | Check task fitness, licensing and serving cost | [Skill](.agents/skills/hf-model-eval/SKILL.md) | [Skill](.claude/skills/hf-model-eval/SKILL.md) |
-| Cost-first | Avoid unnecessary infrastructure and inference | [Skill](.agents/skills/cost-first/SKILL.md) | [Skill](.claude/skills/cost-first/SKILL.md) |
-| Release truth | Separate built, reviewed, merged, deployed and verified | [Skill](.agents/skills/release-truth/SKILL.md) | [Skill](.claude/skills/release-truth/SKILL.md) |
-
-Six definitions are mirrored for the two agent conventions. The [copy script](scripts/copy-skills-for-claude.sh) keeps them aligned. Skill instructions are not proof that every check ran; browser and deployment checks need the corresponding tools and evidence.
-
-## Cost and release rules
-
-Use deterministic code first; adopt a model only when justified. Cloudflare can host the finished application; Modal is an optional inference host, not a required harness service. Free infrastructure does not mean free model/API usage. Set budgets, protect secrets and independently review generated code before exposing it to real users.
-
-**One useful complete workflow beats a large unfinished demo.** Do not silently reduce approved requirements to fit a three-block run.
-
-## Project status and reuse
-
-[Audit and outstanding work](docs/AUDIT.md) · [About metadata](docs/ABOUT.md)
-
-No licence has been selected yet. Do not describe the public repository as unrestricted open source until an explicit reuse licence is added by the maintainer.
+[Previous audit and outstanding evidence](docs/AUDIT.md).
