@@ -40,7 +40,9 @@ function fixture(){
       else if(suffix==="/pulls"){
         if(f.deniedPR)return new Response("{}",{status:403});
         f.hasPR=true;result={html_url:"https://github.com/test/product/pull/2"};
-      }else if(suffix.startsWith("/actions/runs/"))result={status:"completed"};
+      }else if(suffix==="/actions/workflows/buildkit-preview.yml/dispatches" && options.method==="POST") {f.previewDispatches=(f.previewDispatches||0)+1; result={};}
+      else if(suffix==="/actions/workflows/buildkit-release.yml/dispatches" && options.method==="POST") {f.releaseDispatches=(f.releaseDispatches||0)+1; result={};}
+      else if(suffix.startsWith("/actions/runs/"))result={status:"completed"};
       else throw Error("Unexpected network request: "+options.method+" "+suffix);
       return new Response(JSON.stringify(result),{status:200});
     };
