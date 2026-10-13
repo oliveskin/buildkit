@@ -77,11 +77,19 @@ jobs:
           APPROVED: ${{ inputs.approved_sha }}
         run: |
           set -euo pipefail
-          pr="$(gh pr list --repo "$REPO" --head "buildkit/issue-$ISSUE" --state open --json number --jq '.[0].number')"
+          pr="$(gh pr list --repo "$REPO" --head "buildkit/issue-$ISSUE" --state all --limit 100 --json number --jq '.[0].number')"
           test -n "$pr" || { echo "Expected product PR not found"; exit 1; }
-          gh pr ready "$pr" --repo "$REPO"
-          merged="$(gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f sha="$APPROVED" -f merge_method=squash -f commit_title="Buildkit: approved product #$ISSUE")"
-          main_sha="$(printf '%s' "$merged" | jq -er '.sha')"
+          details="$(gh api "repos/$REPO/pulls/$pr")"
+          test "$(printf '%s' "$details" | jq -r '.head.sha')" = "$APPROVED" || { echo "Approved SHA changed"; exit 1; }
+          if test "$(printf '%s' "$details" | jq -r '.merged')" = "true"; then
+            main_sha="$(printf '%s' "$details" | jq -er '.merge_commit_sha')"
+          else
+            gh pr ready "$pr" --repo "$REPO" || true
+            merged="$(gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f sha="$APPROVED" -f merge_method=squash -f commit_title="Buildkit: approved product #$ISSUE")"
+            main_sha="$(printf '%s' "$merged" | jq -er '.sha')"
+          fi
+          current_main="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$main_sha" || { echo "Main has changed; manual recovery required"; exit 1; }
           echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
   deploy:
     needs: [merge]
@@ -124,18 +132,26 @@ jobs:
     needs: [verify, merge, deploy]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       issues: write
     steps:
       - uses: actions/checkout@v4
         with:
+          path: controller
           persist-credentials: false
-      - name: Notify issue of real deployment or blocker
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          ref: buildkit/issue-${{ inputs.issue_number }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Persist deployment status and notify original issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILDKIT_APP_PATH: app
           BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           BUILDKIT_APPROVED_SHA: ${{ inputs.approved_sha }}
           BUILDKIT_DEPLOY_STATUS: ${{ needs.deploy.result }}
           BUILDKIT_DEPLOY_MAIN_SHA: ${{ needs.merge.outputs.main_sha }}
           BUILDKIT_PRODUCTION_URL: ${{ needs.deploy.outputs.url }}
-        run: node harness/release-operation.mjs finalize
+        run: node controller/harness/release-operation.mjs finalize

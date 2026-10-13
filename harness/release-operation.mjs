@@ -53,6 +53,25 @@ async function finalize(){
   const url=env.BUILDKIT_PRODUCTION_URL||"";
   const mainSHA=env.BUILDKIT_DEPLOY_MAIN_SHA||"";
   const checked=deployed&&url.startsWith("https://") && /^[0-9a-f]{40}$/.test(mainSHA);
+  const state=file(".buildkit/state.json");
+  if(state.issue!==issue || state.stage!=="deploying" || !state.releaseApprovedBy)throw Error("Release attestation missing.");
+  state.status=checked?"release-ready":"blocked";
+  state.lastError=checked?null:"Production merge/deployment did not finish; inspect Actions run.";
+  state.releaseResult={outcome:checked?"GO":"BLOCK",mainSha:checked?mainSHA:null,
+    url:checked?url:null,sourceSha:sha,runId:env.GITHUB_RUN_ID,
+    at:new Date().toISOString()};
+  state.history.push({event:checked?"production_verified":"production_blocked",
+    time:new Date().toISOString(),mainSha:checked?mainSHA:null});
+  fs.writeFileSync(path.join(app,".buildkit/state.json"),JSON.stringify(state,null,2)+"\n");
+  git("-c","user.name=buildkit[bot]",
+      "-c","user.email=41898282+github-actions[bot]@users.noreply.github.com",
+      "add",".buildkit/state.json");
+  git("-c","user.name=buildkit[bot]",
+      "-c","user.email=41898282+github-actions[bot]@users.noreply.github.com",
+      "commit","-m","buildkit: "+(checked?"production verified":"production blocked")+" for #"+issue);
+  const auth=Buffer.from("x-access-token:"+token).toString("base64");
+  git("-c","http.https://github.com/.extraheader=AUTHORIZATION: basic "+auth,
+      "push","origin","HEAD:refs/heads/buildkit/issue-"+issue);
   const summary=checked?
     "### Buildkit: production deployment verified\n\nURL: "+url+
     "\nMerged main SHA: "+mainSHA+

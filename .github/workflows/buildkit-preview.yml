@@ -28,6 +28,7 @@ jobs:
         with:
           path: app
           ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -75,7 +76,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_PREVIEW_TOKEN'; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
           cd app
-          wrangler preview --name "bk-issue-$ISSUE" --json > "$RUNNER_TEMP/preview.json"
+          wrangler preview --name "bk-issue-$ISSUE" --json --ignore-base-config > "$RUNNER_TEMP/preview.json"
           preview_url="$(jq -er '.preview.urls[0]' "$RUNNER_TEMP/preview.json")"
           echo "preview_url=$preview_url" >> "$GITHUB_OUTPUT"
   browser:

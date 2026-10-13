@@ -396,7 +396,21 @@ export async function run(context={}) {
       const previous=await api("GET","/actions/runs/"+state.runId);
       if(previous.status!=="completed"){await comment("Previous run is still active; use its Actions page.");return;}
     }
-    state.lastError=null;go=true;
+    state.lastError=null;
+    if(state.stage==="deploying"){
+      if(state.status!=="blocked"){await comment("Release not blocked.");return;}
+      state.status="deploy_pending";
+      persist("buildkit: retrying approved production deployment");
+      if(context.releaseForTest){
+        state.status="release-ready";
+        persist("buildkit: simulated release retry");
+      }else{
+        await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
+          {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
+        await comment("Retrying the separately approved release. Review the Actions run.");}
+      return;
+    }
+    go=true;
   }else if(labeled||cmd?.name==="start"){await comment("Already initialized. Use /status.");return;}
   if(!go)return;
   if(id)state.eventIds=[...state.eventIds,id].slice(-100);
