@@ -24,6 +24,7 @@ jobs:
     outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       payload_digest: ${{ steps.package.outputs.payload_digest }}
+      worker_name: ${{ steps.target.outputs.worker_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,12 +39,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate candidate and isolated bindings
+      - id: target
+        name: Validate candidate and approved HLD bindings
         env:
           BUILDKIT_APP_PATH: app
           BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           BUILDKIT_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+          BUILDKIT_WORKER_NAME: ${{ steps.target.outputs.worker_name }}
         run: node controller/harness/preview-operation.mjs preflight
       - id: package
         name: Build and verify self-contained output without deployment credentials
@@ -96,7 +98,7 @@ jobs:
           BUILDKIT_ARTIFACT_PATH: deploy-artifact
           BUILDKIT_ARTIFACT_DIGEST: ${{ needs.build.outputs.payload_digest }}
           BUILDKIT_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+          BUILDKIT_WORKER_NAME: ${{ needs.build.outputs.worker_name }}
           BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -175,5 +177,5 @@ jobs:
           BUILDKIT_EXPECTED_PREVIEW_URL: ${{ needs.deploy.outputs.preview_url }}
           BUILDKIT_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
           BUILDKIT_ARTIFACT_DIGEST: ${{ needs.build.outputs.payload_digest }}
-          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+          BUILDKIT_WORKER_NAME: ${{ needs.build.outputs.worker_name }}
         run: node controller/harness/preview-operation.mjs complete
