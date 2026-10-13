@@ -405,8 +405,9 @@ export async function run(context={}) {
       }
       await comment("Production release explicitly approved. [Deployment workflow](https://github.com/"+repo+
         "/actions). Approved exact commit: "+checkpoint);
-      await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
-        {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
+      const request=workflowRequest("release",checkpoint,number,baseBranch);
+      state.releaseRequest=request;
+      await sendWorkflow({state,request,api,persist,comment});
       return;
     }
     go=true;
