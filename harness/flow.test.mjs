@@ -19,7 +19,9 @@ function fixture(){
   sh(["add","."],seed);sh(["-c","user.name=Test","-c","user.email=test@example.invalid","commit","-m","init"],seed);sh(["push","origin","main"],seed);
   const main=sh(["rev-parse","HEAD"],seed);let count=0,commentId=0;
   const f={dir,remote,comments:[],calls:[],permission:"write",failBlock:null,mutateSpec:false,mutateStage:false,
-    deniedPR:false,reviewFail:false,hasPR:false,state:null,containerCalls:0,realContainers:process.env.BUILDKIT_TEST_REAL_DOCKER==="1"};
+    deniedPR:false,reviewFail:false,hasPR:false,state:null,containerCalls:0,realContainers:process.env.BUILDKIT_TEST_REAL_DOCKER==="1",
+    usePreviewHook:true,useReleaseHook:true,failPreviewDispatch:false,failReleaseDispatch:false,
+    previewAttempts:[],releaseAttempts:[],workflowRuns:[]};
   f.cleanup=()=>fs.rmSync(dir,{recursive:true,force:true});
   f.invoke=async (body=null,overrides={})=>{
     const work=path.join(dir,"run-"+(++count));sh(["clone",remote,work],dir);
@@ -40,9 +42,17 @@ function fixture(){
       else if(suffix==="/pulls"){
         if(f.deniedPR)return new Response("{}",{status:403});
         f.hasPR=true;result={html_url:"https://github.com/test/product/pull/2"};
-      }else if(suffix==="/actions/workflows/buildkit-preview.yml/dispatches" && options.method==="POST") {f.previewDispatches=(f.previewDispatches||0)+1; result={};}
-      else if(suffix==="/actions/workflows/buildkit-release.yml/dispatches" && options.method==="POST") {f.releaseDispatches=(f.releaseDispatches||0)+1; result={};}
-      else if(suffix.startsWith("/actions/runs/"))result={status:"completed"};
+      }else if(suffix==="/actions/workflows/buildkit-preview.yml/dispatches" && options.method==="POST"){
+        f.previewAttempts.push(JSON.parse(options.body));
+        if(f.failPreviewDispatch)return new Response("{}",{status:503});
+        return new Response(null,{status:204});
+      }else if(suffix==="/actions/workflows/buildkit-release.yml/dispatches" && options.method==="POST"){
+        f.releaseAttempts.push(JSON.parse(options.body));
+        if(f.failReleaseDispatch)return new Response("{}",{status:503});
+        return new Response(null,{status:204});
+      }else if(suffix.includes("/actions/workflows/") && suffix.includes("/runs?")){
+        result={workflow_runs:f.workflowRuns};
+      }else if(suffix.startsWith("/actions/runs/"))result={status:"completed"};
       else throw Error("Unexpected network request: "+options.method+" "+suffix);
       return new Response(JSON.stringify(result),{status:200});
     };
@@ -103,10 +113,10 @@ function fixture(){
           excerpt:"A public task tracker repo",url:"https://github.com/sample/tool",retrievedAt:"2026-10-13"}]}),
       executeSpikes:async()=>({schema:1,decision:"GO",results:[{id:"RISK-01",critical:true,outcome:"PASS",
         evidence:"Observed stub response: synthetic test only"}],blockers:[]}),
-      previewForTest:async()=>({schema:1,previewUrl:"https://demo-bk-app.user.workers.dev",
+      previewForTest:f.usePreviewHook?async()=>({schema:1,previewUrl:"https://demo-bk-app.user.workers.dev",
         httpStatus:200,screenshot:true,pageErrors:0,behaviouralTestsPassed:true,
-        artifact:{id:"1001",runId:"1002",payloadDigest:"a".repeat(64)}}),
-      releaseForTest:async()=>({deployed:true})});}
+        artifact:{id:"1001",runId:"1002",payloadDigest:"a".repeat(64)}}):undefined,
+      releaseForTest:f.useReleaseHook?async()=>({deployed:true}):undefined});}
     finally{
       const state=spawnSync("git",["--git-dir="+remote,"show","buildkit/issue-1:.buildkit/state.json"],{encoding:"utf8"});
       f.state=state.status===0?JSON.parse(state.stdout):null;
