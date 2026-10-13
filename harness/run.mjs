@@ -468,9 +468,13 @@ export async function run(context={}) {
   issue=await api("GET","/issues/"+number);
   if(issue.pull_request||issue.state==="closed")return;
   const who=payload.sender?.login||env.GITHUB_ACTOR;
-  if(payload.sender?.type==="Bot")return;
-  const access=await api("GET","/collaborators/"+encodeURIComponent(who)+"/permission",undefined,true);
-  if(!mayOperate(access?.permission))return;
+  const botContinuation=event==="workflow_dispatch"&&who==="github-actions[bot]"&&
+    env.BUILDKIT_DISPATCH_COMMAND==="resume";
+  if(payload.sender?.type==="Bot"&&!botContinuation)return;
+  if(!botContinuation){
+    const access=await api("GET","/collaborators/"+encodeURIComponent(who)+"/permission",undefined,true);
+    if(!mayOperate(access?.permission))return;
+  }
   const labeled=event==="issues"&&((payload.action==="labeled"&&payload.label?.name===PRODUCT_LABEL)||(payload.action==="opened"&&issue.title.startsWith("[Product]")));
   let cmd=event==="workflow_dispatch"?parseWorkflowCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
     event==="issue_comment"&&payload.action==="created"?parseWorkflowCommand(payload.comment?.body):null;
@@ -486,6 +490,9 @@ export async function run(context={}) {
   checkpoint=git("rev-parse","HEAD");
   state=read(".buildkit/state.json")?JSON.parse(read(".buildkit/state.json")):null;
   if(state&&(state.issue!==number||state.version!==1))throw Error("Wrong project state.");
+  if(botContinuation && (!state?.pendingContinuation ||
+     !["implementation","provisioning"].includes(state.stage) ||
+     !["blocked","working"].includes(state.status)))return;
   if(!state&&!labeled&&cmd?.name!=="start"){await comment("Use /start on a product idea issue.");return;}
   if(!state)state={...makeState(number),brief:String(issue.body||issue.title).slice(0,10000),baseSha,baseBranch};
   state.approvedDocs||={};state.baseSha||=baseSha;state.brief||=String(issue.body||issue.title).slice(0,10000);
@@ -517,6 +524,7 @@ export async function run(context={}) {
     for(const p of STAGE_FILES[gateState.stage]||[])state.approvedDocs[p]=digest(inspectFile(root,p));
     state.history.push({time:new Date().toISOString(),event:"approved",stage:gateState.stage,by:who,digest:gateState.digest,revision:gateState.revision});
     state.stage=GATE_NEXT[gateState.stage];state.gate=null;state.feedback="";
+    if(gateState.stage==="infrastructure")state.infrastructureApprovedBy=who;
     if(gateState.stage==="preview"){
       state.previewReviewedBy=who;
       const target=reviewTarget(state.preview);
