@@ -29,8 +29,14 @@ test("product classification requires human compliance decision on regulated cat
  const profile=classifyProduct("diagnostic tool for doctors","patient records","cloud backend");
  assert.ok(profile.categories.includes("medical"));
  assert.equal(profile.humanComplianceReviewRequired,true);
+ const sourceSha="a".repeat(40),payloadDigest="b".repeat(64);
+ const preview={outcome:"GO",sourceSha,behaviouralTestsPassed:true,
+   artifact:{payloadDigest}};
+ const codeReview={kind:"human",passed:true,sourceSha,payloadDigest,by:"reviewer",commentId:7};
  const checks={profile,secretScan:{passed:true},dependencyAudit:{passed:true},
-   preview:{behaviouralTestsPassed:true},independentReview:{passed:true}};
- assert.equal(assessRelease(checks).decision,"BLOCK");
+   preview,codeReview};
+ assert.equal(assessRelease(checks).decision,"BLOCK","Regulated app lacks human compliance review");
  assert.equal(assessRelease({...checks,externalAttestation:{approved:true}}).decision,"GO");
+ assert.equal(assessRelease({...checks,codeReview:null,externalAttestation:{approved:true}}).decision,
+   "BLOCK","Human compliance attestation never substitutes for code/security review");
 });
