@@ -2,13 +2,13 @@
 
 **Build a real product by describing an idea in GitHub — and reviewing the decisions, evidence, live preview, and production release instead of managing prompts.**
 
-Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring your own GitHub account, one Claude/Codex API key, and infrastructure credentials only if the approved deployment adapter requires them. APIs, compute and optional hosting can still incur charges.
+Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring your own GitHub account, a supported coding-model API key, and infrastructure credentials only if the approved deployment adapter requires them. APIs, compute and optional hosting can still incur charges.
 
 ## Before you start — nothing to install locally
 
-**Using the recommended GitHub workflow? You do not need to install Docker, Git, Node.js, Python, Rust, Claude Code, Codex, Wrangler, Gitleaks or Playwright on your computer.** Buildkit runs on GitHub-hosted Actions runners, which prepare the development tools and isolated build/test containers. You use your browser to open an Issue, inspect the draft PR, and approve decisions.
+**Using the recommended GitHub workflow? You do not need to install Docker, Git, Node.js, Python, Rust, Claude Code, Codex, OpenCode, Wrangler, Gitleaks or Playwright on your computer.** Buildkit runs on GitHub-hosted Actions runners, which prepare the development tools and isolated build/test containers. You use your browser to open an Issue, inspect the draft PR, and approve decisions.
 
-**You do need:** a GitHub account with permission to create a private repository and enable GitHub Actions (including Actions-created PRs), and **one** separately billed provider API key: OpenAI (`OPENAI_API_KEY`) or Anthropic (`ANTHROPIC_API_KEY`). Add the key as a **GitHub Actions repository secret**, not in source files or Issues. Set your model-provider spending limits; GitHub Actions usage limits and charges may also apply.
+**You do need:** a GitHub account with permission to create a private repository and enable GitHub Actions (including Actions-created PRs), and **one** provider API key. Choose OpenAI, Anthropic, OpenRouter, Qwen/Alibaba, Z.ai/GLM, or a compatible custom endpoint. Add the key as a **GitHub Actions repository secret**, not in source files or Issues. Set your model-provider spending limits; GitHub Actions usage limits and charges may also apply.
 
 **Only when the approved architecture requires them:** you may need an infrastructure account and scoped credentials (for example, Cloudflare for a Cloudflare deployment). Buildkit presents resource requirements, estimated/unknown costs, and permissions for approval first. An optional research search service can improve market evidence; it is not required to start.
 
@@ -18,9 +18,26 @@ Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring
 
 1. Click **[Use this template](https://github.com/tinmanlabsl/buildkit/generate)**. Create a **private** repository for your product.
 2. In the new repository: **Settings → Actions → General**. Enable Actions and **Allow GitHub Actions to create and approve pull requests**. The workflows request their own scoped permissions.
-3. Add **one** GitHub Actions secret: `OPENAI_API_KEY` (Codex) **or** `ANTHROPIC_API_KEY` (Claude). A consumer subscription does not necessarily cover API usage.
+3. Add your provider's **GitHub Actions secret** and model variables using the table below. Existing `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` setups still work without new variables. Consumer chat subscriptions do not necessarily cover API usage.
 4. Open **Issues → New issue → Build a product**, describe what you want in a few sentences, and submit. Buildkit opens a draft PR and comments when it needs a decision.
 5. On the **issue**, reply `/approve CODE` (use the supplied code), `/revise what to change`, or `/status`. Review the source evidence and architecture before approving.
+
+### Bring your preferred coding model
+
+Set these in **Settings → Secrets and variables → Actions** in the new product repository:
+
+| Provider | Secret | `BUILDKIT_MODEL_PROVIDER` variable | Model selection |
+|---|---|---|---|
+| OpenAI / Codex | `OPENAI_API_KEY` | `openai` (optional) | Native default, or `BUILDKIT_MODEL` |
+| Anthropic / Claude Code | `ANTHROPIC_API_KEY` | `anthropic` (optional for sole native key) | Native default, or `BUILDKIT_MODEL` |
+| OpenRouter | `OPENROUTER_API_KEY` | `openrouter` | Set `BUILDKIT_MODEL` to the exact provider/model ID |
+| Qwen / Alibaba | `QWEN_API_KEY` | `qwen`, `qwen-cn` or `qwen-us` | Exact regional model ID |
+| Z.ai / GLM | `ZAI_API_KEY` | `zai` or `zai-coding` | Exact model ID available under the selected API/plan |
+| Custom compatible endpoint | `BUILDKIT_API_KEY` | `custom` | Exact model, public HTTPS base URL and API protocol |
+
+OpenCode runs the new provider options; Buildkit configures it automatically. Before a new model receives product source, a small live read/edit probe checks tool compatibility. There is **no silent model or billing-plan fallback**. API compatibility does not guarantee coding quality. Region, model access and quotas must match your account.
+
+A different model can independently review the builder, including via the same OpenRouter account. The same model through another CLI or gateway does not count as independent. Human code/security review remains available. See **[model/provider setup, custom endpoints, review and costs](docs/MODELS.md)**.
 
 **No Cloudflare decision is required at the outset.** Buildkit proposes an execution and resource plan *after researching the product and creating the HLD*. You approve the stack, expected costs, permissions and requested resources. Cloudflare is one possible adapter, not the architecture. You do not paste credentials into Issues.
 
@@ -65,9 +82,9 @@ Optional: `BUILDKIT_SEARCH_ENDPOINT` (repository variable; HTTPS JSON search end
 
 - Sensitive filenames and values are blocked before commit. **Gitleaks** runs in the GitHub harness and CI against the repository/diff; a local hook can be installed with `bash scripts/install-hooks.sh`.
 - `.gitignore` is necessary but **not sufficient**: tracked files and normal source files are also scanned. If a key leaks, **revoke/rotate it**; Git history cleanup alone is not remediation.
-- Generated npm scripts run in isolated containers without model/GitHub keys. The coding agent still receives the selected model key; it is not a security boundary for hostile tenants or arbitrary third-party code.
+- Generated build/test scripts run in isolated containers without model/GitHub keys. Each model child process receives only its selected credential; OpenCode uses a disposable workspace and restricted file tools. This is not an OS sandbox for hostile tenants.
 - Cloudflare preview and production credentials are separate from coding-agent credentials. Approval gates prevent automatic production deployment; failures stop the workflow rather than silently claiming success.
-- This free repository does **not** pay for coding-model tokens, third-party APIs, GitHub runner overages, Cloudflare paid resources or GPU workloads.
+- Model usage records preserve unknown cost as unknown. Call/time/token limits and optional observed-cost checks do not replace provider-side spending limits. This free repository does **not** pay for coding-model tokens, third-party APIs, GitHub runner overages, Cloudflare paid resources or GPU workloads.
 
 ### Runtime and cost boundaries
 
@@ -78,6 +95,7 @@ For unsupported external resource providers, Buildkit records the necessary reso
 ## More detailed guides
 
 - **[Complete walkthrough, setup, approvals, troubleshooting](docs/HARNESS.md)**
+- **[Model providers, OpenRouter/Qwen/GLM and custom APIs](docs/MODELS.md)**
 - **[Specification templates](docs/PRD_TEMPLATE.md)**: [PRD](docs/PRD_TEMPLATE.md) · [HLD](docs/HLD_TEMPLATE.md) · [LLD](docs/LLD_TEMPLATE.md)
 - **[Release checklist](docs/RELEASE_CHECKLIST.md)**
 - **[Prompts reference](PROMPTS.md)**, [manual playbook](START-HERE.md), [worked exercise](FIRST-PRODUCT-EXERCISE.md)
@@ -86,6 +104,6 @@ For unsupported external resource providers, Buildkit records the necessary reso
 
 ### Current proof boundary
 
-Unit/flow tests and GitHub CI exercise the controller with mocked AI/GitHub and real Docker/npm fixtures, not a paid-provider end-to-end product build. The Cloudflare preview/release jobs require each user's authorized account and real credentials. Generated E2E test **quality**, required compliance sign-off and real customer integration must still be assessed. See workflow logs and evidence; do not equate a passing CI run with business or regulatory assurance.
+Unit/flow tests and GitHub CI exercise the controller with mocked AI/GitHub, real Docker/npm fixtures and the pinned OpenCode CLI, not a paid-provider end-to-end product build. Each user's OpenCode model must pass a live capability preflight. The Cloudflare preview/release jobs require each user's authorized account and real credentials. Generated E2E test **quality**, required compliance sign-off and real customer integration must still be assessed. See workflow logs and evidence; do not equate a passing CI run with business or regulatory assurance.
 
 **Licence:** [MIT](LICENSE). This is a single open-source workflow, not artificially separated into feature tiers.
