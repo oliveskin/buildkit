@@ -12,7 +12,7 @@ Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring
 4. Open **Issues → New issue → Build a product**, describe what you want in a few sentences, and submit. Buildkit opens a draft PR and comments when it needs a decision.
 5. On the **issue**, reply `/approve CODE` (use the supplied code), `/revise what to change`, or `/status`. Review the source evidence and architecture before approving.
 
-**Before the first Cloudflare preview**, add the [Cloudflare settings below](#cloudflare-preview-and-release-setup). Buildkit stops with instructions if they are missing. It never asks you to paste credentials into an issue.
+**Before approving architecture (which immediately starts implementation)**, set the `BUILDKIT_WORKER_NAME` Actions repository variable to the exact intended Worker name; Buildkit refuses to invent this target. Before the first Cloudflare preview, add the [separate preview credentials below](#cloudflare-preview-and-release-setup). Buildkit stops with instructions if they are missing. It never asks you to paste credentials into an issue.
 
 ## The approval-driven workflow
 
