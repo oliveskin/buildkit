@@ -268,3 +268,17 @@ test("new search access before scope approval automatically refreshes displayed 
     assert.equal(f.state.history.filter(x=>x.event==="approved").length,0);
   }finally{f.cleanup();}
 });
+
+test("missing Cloudflare Worker identity blocks implementation and resumes after configuration",async()=>{
+  const f=fixture();try{
+    await f.invoke();await f.approve();
+    await assert.rejects(
+      f.invoke("/approve "+f.state.gate.code,{BUILDKIT_WORKER_NAME:""}),
+      /BUILDKIT_WORKER_NAME/);
+    assert.equal(f.state.status,"blocked");
+    assert.equal(f.state.stage,"implementation");
+    assert.equal(f.state.completedBlocks.length,0);
+    await f.invoke("/resume",{BUILDKIT_WORKER_NAME:"bk-fixture-app"});
+    assert.equal(f.state.gate.stage,"preview");
+  }finally{f.cleanup();}
+});
