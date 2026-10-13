@@ -255,7 +255,11 @@ export async function run(context={}) {
         agent(provider,instructions()+"\nCloudflare target Worker (exact name, no substitutions): "+(env.BUILDKIT_WORKER_NAME||"NOT CONFIGURED: require the user to set BUILDKIT_WORKER_NAME")+". Do not deploy; produce wrangler.json name matching this value when configured.\nImplement only "+JSON.stringify(b)+
           ". Build a real Cloudflare Workers compatible web app. Generate wrangler.json in strict JSON "+
           "with approved worker name, previews.vars.ENVIRONMENT='preview', and separate preview "+
-          "resource bindings. Generate tests/e2e.spec.mjs with at least two actual user journeys "+
+          "resource bindings. Configure package.json buildkit.deploymentDirectory='dist/buildkit'. "+
+          "The npm build command must emit a complete self-contained dist/buildkit/wrangler.json "+
+          "with no_bundle:true, a built .js entry and/or copied static assets all inside dist/buildkit. "+
+          "Do not require npm install or another build when this output is uploaded to Cloudflare. "+
+          "Generate tests/e2e.spec.mjs with at least two actual user journeys "+
           "using BASE_URL, as well as npm build/test scripts. Do not insert keys or customer data. "+
           "Do not modify approved specifications. The controller runs tests.");
         if(digest(entries(Object.values(STAGE_FILES).flat()))!==specs)throw Error("Builder changed a specification.");
