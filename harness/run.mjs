@@ -187,7 +187,7 @@ export async function run(context={}) {
           evidence.sources.map(x=>"- ["+x.id+"] "+x.category+" — "+x.title+": "+x.url+
           "\n  - Checked: "+x.retrievedAt+"; excerpt: "+x.excerpt).join("\n")+"\n\n"+
           "Gaps: "+(evidence.gaps||[]).join("; ")+"\n");
-        state.researchCacheKey=researchCacheKey(state,env);
+        state.researchCacheFingerprint=researchCacheKey(state,env);
         state.retryResearch=false;
         persist("buildkit: retrieved research evidence");
       }
