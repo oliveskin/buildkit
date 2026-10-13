@@ -1,5 +1,10 @@
 # Buildkit — the solo AI product builder's playbook
 
+## Guided GitHub harness (new)
+
+**Start here if you want Buildkit to manage the steps for you:** [GitHub-native harness setup](docs/HARNESS.md). In a product repository created from this template, open **Issues → Build a product** and describe an idea. The Action produces reviewable scope/PRD/HLD/LLD and a draft PR, then pauses for `/approve CODE` or `/revise ...` at each major gate. One coding-provider API key is required; it never auto-merges or auto-deploys. See [workflow](.github/workflows/buildkit.yml) and [tests](harness/core.test.mjs).
+
+
 **Go from an idea to a working, deployed, market-testable product with Claude Code, Codex, GitHub, Cloudflare, Hugging Face and Modal — without building unnecessary infrastructure.**
 
 This is a **hands-on kit**, not a course. It includes reusable prompts, PRD/HLD/LLD templates, project-level agent rules, six development/quality skills for both Claude and Codex, a starter inference connection, and a worked exercise.
