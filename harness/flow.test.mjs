@@ -82,7 +82,7 @@ function fixture(){
             const reportDir=fs.mkdtempSync(path.join(os.tmpdir(),"bk-scanner-report-"));
             try{
               const imageIndex=args.findIndex(a=>String(a).includes("gitleaks/gitleaks:"));
-              const diagnosticArgs=[...args.slice(0,imageIndex),"-v",reportDir+":/report",
+              const diagnosticArgs=[...args.slice(0,imageIndex),"--user",`${process.getuid()}:${process.getgid()}`,"-v",reportDir+":/report",
                 ...args.slice(imageIndex),"--report-format","json","--report-path","/report/findings.json"];
               spawnSync(cmd,diagnosticArgs,options);
               const findings=JSON.parse(fs.readFileSync(path.join(reportDir,"findings.json"),"utf8"));
