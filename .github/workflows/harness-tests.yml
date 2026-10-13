@@ -45,7 +45,7 @@ jobs:
       - name: Install pinned CLI without model or deployment credentials
         working-directory: ${{ runner.temp }}
         run: npm install -g opencode-ai@1.19.0
-      - name: Validate actual configuration and noninteractive CLI (no inference)
+      - name: Validate CLI configuration and local simulated tool-call protocol
         env:
           BUILDKIT_TEST_OPENCODE: '1'
-        run: node --test harness/model-cli.test.mjs
+        run: node --test harness/model-cli.test.mjs harness/model-protocol.test.mjs
