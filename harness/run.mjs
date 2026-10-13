@@ -181,7 +181,7 @@ async function main(){
   const who=payload.sender?.login||env.GITHUB_ACTOR;
   const access=await api("GET","/collaborators/"+encodeURIComponent(who)+"/permission",undefined,true);
   if(!mayOperate(access?.permission))return;
-  const labeled=event==="issues"&&payload.action==="labeled"&&payload.label?.name===PRODUCT_LABEL;
+  const labeled=event==="issues" && ((payload.action==="labeled"&&payload.label?.name===PRODUCT_LABEL) || (payload.action==="opened"&&issue.title.startsWith("[Product]")));
   const cmd=event==="workflow_dispatch"?parseCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
     event==="issue_comment"&&payload.action==="created"?parseCommand(payload.comment?.body):null;
   if(!labeled&&!cmd)return;
