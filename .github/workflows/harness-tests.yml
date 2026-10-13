@@ -31,4 +31,4 @@ jobs:
       - name: Real isolated npm execution (fake AI and GitHub; no API spend)
         env:
           BUILDKIT_TEST_REAL_DOCKER: '1'
-        run: node --test --test-name-pattern='complete three-gate' harness/flow.test.mjs
+        run: node --test --test-name-pattern='complete approval flow' harness/flow.test.mjs
