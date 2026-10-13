@@ -112,15 +112,27 @@ jobs:
           pr="$(gh pr list --repo "$REPO" --head "buildkit/issue-$ISSUE" --state all --limit 100 --json number --jq '.[0].number')"
           test -n "$pr" && test "$pr" != null
           details="$(gh api "repos/$REPO/pulls/$pr")"
+          head="$(printf '%s' "$details" | jq -er '.head.sha')"
+          # A dispatched run may add only controller-state metadata after release approval.
+          # Verify every intervening commit leaves the approved application bytes unchanged.
+          if test "$head" != "$APPROVED"; then
+            delta="$(gh api "repos/$REPO/compare/$APPROVED...$head")"
+            printf '%s' "$delta" | jq -e '
+              .status == "ahead" and .behind_by == 0 and
+              .ahead_by <= 12 and (.files | length) == 1 and
+              .files[0].filename == ".buildkit/state.json" and
+              .files[0].status == "modified"
+            ' >/dev/null || { echo 'Unapproved code or unexpected metadata changed since release approval'; exit 1; }
+          fi
           if test "$(printf '%s' "$details" | jq -r '.merged')" = true; then
-            test "$(printf '%s' "$details" | jq -r '.head.sha')" = "$APPROVED" || { echo 'Merged PR was not the approved head'; exit 1; }
+            test "$head" = "$APPROVED" || test -n "$delta" || { echo 'Merged PR head is not reviewed'; exit 1; }
             main_sha="$(printf '%s' "$details" | jq -er '.merge_commit_sha')"
           else
             current_main="$(gh api "repos/$REPO/git/ref/heads/$BASE" --jq '.object.sha')"
             test "$current_main" = "$BASE_SHA" || { echo 'Base changed: refresh preview before release'; exit 1; }
-            test "$(printf '%s' "$details" | jq -r '.head.sha')" = "$APPROVED" || { echo 'Product branch changed: new approval required'; exit 1; }
+            test -n "$head" || { echo 'PR head missing'; exit 1; }
             if test "$(printf '%s' "$details" | jq -r '.draft')" = true; then gh pr ready "$pr" --repo "$REPO"; fi
-            merged="$(gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f sha="$APPROVED" -f merge_method=squash -f commit_title="Buildkit: approved product #$ISSUE")"
+            merged="$(gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f sha="$head" -f merge_method=squash -f commit_title="Buildkit: approved product #$ISSUE")"
             main_sha="$(printf '%s' "$merged" | jq -er 'select(.merged == true) | .sha')"
           fi
           test "$(gh api "repos/$REPO/git/ref/heads/$BASE" --jq '.object.sha')" = "$main_sha" || { echo 'Main advanced; refusing stale deployment'; exit 1; }
