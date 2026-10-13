@@ -56,7 +56,7 @@ function fixture(){
         const outputs=options.input.match(/Only write: (.+)\. Start Markdown/);
         if(outputs){
           for(const p of outputs[1].split(", ")){
-            const text=p.endsWith("spikes/plan.json")?JSON.stringify({schema:1,probes:[{id:"RISK-01",risk:"Verify the runtime endpoint responds as expected",kind:"https_read",url:"https://developers.cloudflare.com/workers/",critical:true,assertion:"Contract response matches expected Cloudflare marker",
+            const text=p.endsWith("spikes/plan.json")?JSON.stringify({schema:1,probes:[{id:"RISK-01",risk:"Verify the runtime endpoint responds as expected",kind:"http_contract",url:"https://developers.cloudflare.com/workers/",method:"GET",critical:true,assertion:"Contract response matches expected Cloudflare marker",
     expectedText:"Cloudflare"}]}):
               p.endsWith(".json")?JSON.stringify({blocks:[1,2].map(i=>({id:"B0"+i,goal:"Complete a genuinely useful user workflow",acceptance:["Behavioural test proves the outcome"]}))}):
               "# "+p+"\n\nDecision: keep a small complete workflow. Evidence: [E-001]. Market UNVERIFIED. Review required before spending or deployment.\n";
