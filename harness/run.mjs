@@ -243,9 +243,34 @@ export async function run(context={}) {
         (results.blockers||[]).join("; ")+". Check spikes/results.json and use /resume after fixing the cause.");
       generate(provider,["docs/FEASIBILITY.md"],"Report only actual observations in spikes/results.json; "+
         "cite exact probe IDs, explain what these tests do NOT prove, give a GO/CHANGE/NO-GO decision.");
-      await gate("architecture","Review PRD, HLD and actual risk-check evidence. Critical probes passed; "+
-        "untested capabilities must still be described as UNVERIFIED. Before approving, set the exact "+
-        "BUILDKIT_WORKER_NAME repository variable; implementation must not invent a deployment target.");
+      generate(provider,["docs/EXECUTION_PLAN.json"],
+        "Read the approved direction, complete PRD and HLD, and executed feasibility findings. "+
+        "Choose deployment/runtime from requirements, NEVER assume Cloudflare. Strict JSON schema:1 with "+
+        "productKind, rationale >=25 chars, requirements:[all MMFS FR-01 etc], "+
+        "build:{adapter:'node-npm'|'python-pytest'|'rust-cargo'|'external',language}, "+
+        "preview:{adapter:'cloudflare-workers'|'external-url'|'native-artifact'|'unsupported'}, "+
+        "deploy:{adapter:'cloudflare-workers'|'external-manual'|'unsupported',provider,workerName only for Cloudflare}, "+
+        "risks:[],tradeoffs:[]. An unsupported adapter must remain explicit, never silently change the stack.");
+      const execution=JSON.parse(read("docs/EXECUTION_PLAN.json"));
+      validateExecutionPlan(execution);
+      generate(provider,["docs/INFRA_PLAN.json"],
+        "Read HLD and EXECUTION_PLAN. Define the exact resources and cost exposure for human approval. "+
+        "Strict JSON schema:1 with provider:'none'|'cloudflare'|'external',summary >=20 chars,resources:[], "+
+        "domain:null or {hostname,zoneId:32hex,apply:'after-release-approval'}, "+
+        "cost:{estimatedMonthlyUsd: number or null if unknown,pricingSource,assumptions:[...],canExceedEstimate:true|false}, "+
+        "permissions:[...],operations:[...]. Cloudflare resources: "+
+        "{id:'R-01',kind:'d1'|'kv'|'r2',binding:'DB',mode:'create'|'reuse',"+
+        "productionName,previewName,existing IDs only for reuse}. New resource names MUST start "+
+        "with '"+resourceNamespace(repo,number)+"' to isolate this issue. "+
+        "Use no resources and provider none when nothing is needed. "+
+        "Custom domains require an existing owned Cloudflare zone ID; never invent one. "+
+        "Unknown costs must be null with assumptions, never fabricated. "+
+        "If the chosen provider has no provisioning adapter, describe it as external, not Cloudflare.");
+      const infrastructure=JSON.parse(read("docs/INFRA_PLAN.json"));
+      validateInfrastructurePlan(infrastructure,execution);
+      await gate("architecture","Review PRD, HLD, executed feasibility and explicit technology-neutral "+
+        "EXECUTION_PLAN/INFRA_PLAN. Cloudflare is optional. Inspect selected build/preview/deploy "+
+        "adapters, data needs, dependencies, costs, and any missing automation before approving.");
     }else if(state.stage==="implementation"){
       if(!validWorkerName(env.BUILDKIT_WORKER_NAME||""))
         throw Error("Set a valid BUILDKIT_WORKER_NAME repository variable before implementation, using the exact intended Cloudflare Worker name.");
