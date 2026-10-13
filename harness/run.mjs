@@ -271,9 +271,45 @@ export async function run(context={}) {
       await gate("architecture","Review PRD, HLD, executed feasibility and explicit technology-neutral "+
         "EXECUTION_PLAN/INFRA_PLAN. Cloudflare is optional. Inspect selected build/preview/deploy "+
         "adapters, data needs, dependencies, costs, and any missing automation before approving.");
+    }else if(state.stage==="infrastructure"){
+      const execution=JSON.parse(read("docs/EXECUTION_PLAN.json"));
+      const infrastructure=JSON.parse(read("docs/INFRA_PLAN.json"));
+      validateInfrastructurePlan(infrastructure,execution);
+      if(!infrastructure.resources.length && !infrastructure.domain){
+        state.stage="implementation";
+        return stage();
+      }
+      const names=infrastructure.resources.flatMap(r=>[r.previewName,r.productionName]).join(", ");
+      const cost=infrastructure.cost.estimatedMonthlyUsd===null?"UNKNOWN - variable charges may apply":
+        "$"+infrastructure.cost.estimatedMonthlyUsd+" estimated/month (not a hard cap)";
+      await gate("infrastructure","This approval AUTHORIZES provisioning precisely these resources: "+
+        (names||"no storage resources")+". Custom domain: "+
+        (infrastructure.domain?infrastructure.domain.hostname+" (only after production release approval)":"none")+
+        ". Estimated spend: "+cost+". Account permissions: "+infrastructure.permissions.join(", ")+
+        ". Inspect full provider pricing, usage assumptions and restrictions before approving.");
+    }else if(state.stage==="provisioning"){
+      const execution=JSON.parse(read("docs/EXECUTION_PLAN.json"));
+      const infrastructure=JSON.parse(read("docs/INFRA_PLAN.json"));
+      validateInfrastructurePlan(infrastructure,execution);
+      if(infrastructure.provider!=="cloudflare")
+        throw Error("Infrastructure provider "+infrastructure.provider+
+          " has no automated provisioning adapter. No resources were created. Select an adapter or revise the HLD.");
+      if(context.provisionForTest){
+        const evidence=await context.provisionForTest({execution,infrastructure});
+        write("docs/infrastructure/PROVISIONED.json",JSON.stringify(evidence,null,2)+"\n");
+        state.stage="implementation";return stage();
+      }
+      state.status="awaiting_provision";state.gate=null;
+      persist("buildkit: await human-approved infrastructure operation");
+      const request=workflowRequest("provision",checkpoint,number,baseBranch);
+      state.provisionRequest=request;
+      await sendWorkflow({state,request,api,persist,comment});
+      await comment("Provisioning only approved data resources with a separate scoped Cloudflare token. "+
+        "Preview and production remain distinct. No domain will be attached before release approval.");
+      return;
     }else if(state.stage==="implementation"){
-      if(!validWorkerName(env.BUILDKIT_WORKER_NAME||""))
-        throw Error("Set a valid BUILDKIT_WORKER_NAME repository variable before implementation, using the exact intended Cloudflare Worker name.");
+      const execution=JSON.parse(read("docs/EXECUTION_PLAN.json"));
+      validateExecutionPlan(execution);
       if(!state.planDigest){
         generate(provider,["docs/LLD.md"],"Use approved docs and LLD_TEMPLATE: concrete routes, screens, schemas, tests and rollback. Cover the whole approved MMFS, not unrelated features.");
         generate(provider,["docs/BUILD_BLOCKS.json"],'Write JSON only: {"blocks":[{"id":"B01","goal":"Complete core user workflow","acceptance":["Behavioural test passes"]}]}. 1–3 ordered blocks B01–B03 covering approved MMFS.');
