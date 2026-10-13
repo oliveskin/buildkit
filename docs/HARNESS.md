@@ -1,99 +1,76 @@
-# Buildkit: GitHub-native guided product build
+# Buildkit — the complete GitHub-native builder workflow
 
-GitHub Issues are the user's interface; Actions handles execution; draft PRs preserve documents/code; Cloudflare Workers Previews hosts the **actual working preview**. All approval commands belong on the **original product Issue**. This document covers the complete lifecycle, not just source generation.
+**Buildkit is free, MIT-licensed software.** GitHub Issues provide the interface, Actions runs approved tasks, and a private product repository holds evidence, PRD/HLD/LLD and code. The HLD—not Buildkit—chooses the stack. Cloudflare is an optional adapter for suitable products, not a product requirement.
 
-## First-time setup (in each new private product repository)
+## Start a product
 
-1. Create the repository via **[Use this template](https://github.com/tinmanlabsl/buildkit/generate)**.
-2. In **Settings → Actions → General**, enable Actions and allow Actions to create/approve pull requests; organization restrictions may require an admin. A generated repository does **not** inherit Buildkit's secrets or settings.
-3. Set **one** Actions repository secret (Settings → Secrets and variables → Actions → Repository secrets): `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Codex wins if both are set, unless `BUILDKIT_PROVIDER=claude` (repository variable).
-4. Set provider API billing alerts/limits. A consumer subscription doesn't imply included GitHub Actions API access.
-5. Open **Issues → New issue → Build a product** and describe the customer, desired outcome and hard constraints. Leave the `[Product]` title prefix in place. Buildkit posts links and approval codes.
+1. [Use the Buildkit template](https://github.com/tinmanlabsl/buildkit/generate) to create a **private repository**. No Buildkit server is required.
+2. In that repository go to **Settings → Actions → General**. Enable Actions and allow GitHub Actions to create pull requests (subject to organization rules).
+3. Add one Actions repository secret: `OPENAI_API_KEY` (Codex) **or** `ANTHROPIC_API_KEY` (Claude). These are externally billed API calls; set provider-side limits/alerts. Both keys are optional if one is present; a separate second-provider review may use the other one.
+4. Open **Issues → New issue → Build a product**, describe the desired outcome and hard requirements. Do not paste credentials in the Issue.
+5. Review Buildkit's Issue comments and draft PR. Use the exact current `/approve CODE`, or `/revise your feedback`.
 
-**Reproducible output:** The generated npm app declares `package.json` `buildkit.deploymentDirectory` (default `dist/buildkit`). Its `npm run build` emits a self-contained payload with a built JavaScript Worker entry or static assets and a `wrangler.json` configured with `no_bundle: true`. A secret-free job builds and hashes that output; preview and production jobs upload **the same artifact bytes** without rerunning application builds. The artifact manifest records the source commit, worker name and payload digest.
+## The actual approval sequence
 
-**Before approving the architecture**, set the exact `BUILDKIT_WORKER_NAME` repository variable: approval immediately starts implementation, which creates the matched `wrangler.json`. Preview credentials can be configured later, before browser review. The harness stops rather than inventing a Worker or silently using another account.
-
-### Cloudflare credentials and target
-
-Under **Settings → Secrets and variables → Actions** of your **product repository**, configure:
-
-| Kind | Name | Why |
+| Stage | What Buildkit does | What you approve |
 |---|---|---|
-| Secret | `CLOUDFLARE_ACCOUNT_ID` | Account to use; never pasted into Issues |
-| Secret | `CLOUDFLARE_PREVIEW_TOKEN` | Scoped to preview deployment capability |
-| Secret | `CLOUDFLARE_PROD_TOKEN` | Separate scoped production deployment credential |
-| Variable | `BUILDKIT_WORKER_NAME` | Exact Worker in `wrangler.json`, for example `bk-my-task-app` |
+| Direction | Retrieves source evidence, maps product/user need and proposed MMFS | Scope, evidence quality and exclusions |
+| PRD/HLD/feasibility | Generates testable requirements, architecture and executed critical probes | The proposed product, risks and alternatives |
+| Execution and infrastructure plan | Produces `docs/EXECUTION_PLAN.json` (runtime/build/preview/deploy adapters) and `docs/INFRA_PLAN.json` (resources, actual names, expected cost, unknown charges, permission scopes and domain intent) | The stack that genuinely fits, rather than mandatory Cloudflare |
+| Provisioning consent, **only if resources or a domain are requested** | Posts the exact resource names, permissions and cost exposure. Creates approved D1/KV/R2 resources in separate preview/production environments using a provisioning-only credential | A separate `/approve CODE` authorizes the listed resource creation. A custom domain remains deferred until production release |
+| Implementation | Generates LLD and a dependency-aware, requirement-mapped build plan with **no total number-of-blocks ceiling** | Full MMFS implementation, not a reduced three-block demo |
+| Verification | Executes small checkpointed blocks with the architecture's Node, Python or Rust test adapter; automatically dispatches the next bounded batch | Review test evidence and failed constraints |
+| Preview | Uses the adapter selected in the HLD. For Workers applications: builds immutable output without deployment credentials and runs Playwright against Cloudflare Preview | The actual user experience |
+| Code/security review | Separate-model review if configured, otherwise explicit human `/review CODE` after inspecting the PR | Code and security evidence; UX approval alone is not a security assessment |
+| Production release | Requires another explicit approval; rechecks exact approved source/immutable artifact, merges and deploys using the chosen supported adapter | Deployment target, cost exposure and any intended custom domain |
 
-Use the **minimum Cloudflare privileges** each workflow needs and confirm the target account. Production and preview tokens should not be identical. Worker Previews requires Wrangler >= 4.135; the workflows pin a supported version.
+**Important:** Currently automated build verification adapters: Node/npm, Python/pytest and Rust/Cargo. Cloudflare Workers has the wired preview and production adapter. Choosing native iOS/Android, Modal/GPU or another cloud provider is allowed, **but the current harness stops and names the missing adapter instead of pretending that app ran on Cloudflare**. It does not silently change the approved HLD.
 
-The implementation produces a checked-in `wrangler.json` with a `previews` block. Top-level bindings are production. Bind Preview D1/KV/R2/Vectorize/Hyperdrive to **distinct staging resource IDs/names**; where those resources are needed, create and authorize them before preview. Buildkit checks for overlapping IDs and unsupported production-coupled Worker settings. No arbitrary resource creation or database migration is authorized without user review.
+## The resource and cost decision
 
-**Preview access:** Preview URLs may be public. For confidential flows enable [Cloudflare Access on the Worker/Previews](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) and arrange an authorized way for Playwright to test them; do not use real customer secrets/PII in public preview data. Preview auth is not automatically provisioned by this kit.
+There is **no need to pick Cloudflare before research or HLD**. When an approved plan uses Cloudflare, configure these Actions settings *in the private product repository*:
 
-### Optional research/feasibility sources
-
-| Kind | Name | Behaviour |
+| Setting | When needed | Purpose |
 |---|---|---|
-| Variable | `BUILDKIT_SEARCH_ENDPOINT` | Public HTTPS JSON search API endpoint accepting `q` and returning a `results` array of title/url/content |
-| Secret | `BUILDKIT_SEARCH_KEY` | Authorization for that external search endpoint |
-| Variable | `BUILDKIT_SPIKE_HOSTS` | Comma-separated, explicitly approved HTTPS hosts for feasibility network probes |
-| Variable | `BUILDKIT_REVIEW_PROVIDER` | A separate model for static diff review; needs its own corresponding model API key |
+| Secret `CLOUDFLARE_ACCOUNT_ID` | Provision, preview and release | The selected Cloudflare account |
+| Secret `CLOUDFLARE_PROVISION_TOKEN` | After explicit resource approval | Create/reconcile **only** the plan's named D1/KV/R2 resources |
+| Secret `CLOUDFLARE_PREVIEW_TOKEN` | Preview | Upload the reviewed build to Workers Previews |
+| Secret `CLOUDFLARE_PROD_TOKEN` | Production approval | Deploy only the release-approved application and apply any approved domain |
+| Variable `BUILDKIT_WORKER_NAME` | Optional | Additional assertion only; if present it must match the name in the approved HLD |
 
-These settings are optional until a proposed product requires them. If research cannot substantiate an important claim, the report must state **UNVERIFIED**, not invent an alternative. If a critical technical dependency cannot be proven by an allowed executable probe, the architecture stage **blocks**. The user must authorize any required external credentials and test accounts through GitHub/Cloudflare secrets; they must not be pasted into comments or generated files.
+Buildkit does not give model agents Cloudflare keys. It stores non-secret resource identifiers in `docs/infrastructure/PROVISIONED.json`. Production and preview D1/KV/R2 bindings must agree **exactly** with this record; the preview must never reuse production data resources.
 
-## The workflow, as the user experiences it
+For custom domains, the plan must specify an exact hostname and an **owned, active Cloudflare zone ID**. Buildkit checks for conflicting ownership/DNS and attaches it only after separately approved, successful production deployment. It never seizes an existing domain or overrides DNS records.
 
-| Step | Automated work | Approval / exception |
-|---|---|---|
-| **1. Direction** | Acquire actual source metadata and optional market references → `docs/research/EVIDENCE.json` and `docs/DIRECTION.md` | Check customer/market evidence, smallest marketable feature set, risks and explicit exclusions; `/approve CODE` or `/revise ...` |
-| **2. Architecture** | Generate PRD/HLD; create `spikes/plan.json`; execute permitted tests and record `spikes/results.json`; generate feasibility summary | Critical failed/unverified feasibility blocks. Approve real architecture and documented residual uncertainty |
-| **3. Implementation** | LLD, 1–3 bounded blocks and reproducible isolated npm build/test/audit; security and secret checks | Failed test or protected-file modification blocks while successful checkpoints remain |
-| **4. Cloudflare Preview** | Build immutable self-contained output with a SHA-256 manifest; deploy that artifact (no build in credentialed jobs); run Playwright and capture screenshots | Inspect the **real preview**; approve UX using `/approve CODE`, or `/revise ...` |
-| **5. Code/security review** | Bind an independent second-provider review to the reviewed artifact, or request an explicit human PR/security examination | If requested, inspect code and security evidence and reply `/review CODE`; UX approval alone does not qualify |\n| **6. Release review** | Evaluate risk profile, code/security sign-off, actual browser results and payload digest | Regulated products require qualified human compliance review; approve production separately |
-| **7. Deployment** | Separate scoped workflow verifies approved source plus metadata-only outbox changes, reuses the **same preview-tested artifact**, merges the PR, deploys and smoke-tests | Result posted to Issue. Monitoring, backups and rollback remain the owner’s responsibility |
+The resource plan must declare estimated monthly USD cost (or **UNKNOWN**), source of pricing, assumptions, ability to exceed estimates, Cloudflare permission scopes and operations. **An estimate is not a spending limit.** The software is free; model tokens, hosting, storage and external service charges remain the user's responsibility.
 
-The user is not asked to select prompts or pass documents between steps. GitHub stores version-bound state in the product branch. Research citations and approval digests are checkable; an approved PRD cannot be silently altered by an agent.
+External providers may be included in the HLD and resource plan, but automated resource creation waits for a compatible adapter. Do not fabricate provisioning success.
 
-### Issue commands
+## Review and recovery commands
 
-| Comment | Meaning |
+Post commands only on the **original product Issue**:
+
+| Command | Result |
 |---|---|
-| `/start` | Start an eligible issue |
-| `/status` | Show current step, draft PR, latest approval code or blocker |
-| `/approve CODE` | Approve exactly the presented version (copy from latest issue comment) |
-| `/revise Describe the change` | Invalidate affected outputs and dependent approvals, then regenerate; also works after a blocked preview |\n| `/refresh-research New URLs or search context` | Retrieve research again and invalidate downstream direction/architecture/implementation decisions |\n| `/review CODE` | Explicitly acknowledge a separate, version-bound source/security review after inspecting the PR; this is **not** the UX gate |
-| `/resume` | Retry a blocked/interrupted stage; preserves successful blocks |
-| `/attest COMPLIANCE-REVIEWED` | Record that a **qualified human** has reviewed the regulated product profile; not a legal certification |
+| `/start` | Start an eligible unopened product workflow |
+| `/status` | Report stage, completed blocks, latest gate and actual GitHub workflow status |
+| `/approve CODE` | Approve the exact current scope, architecture, infrastructure, preview or production version as indicated |
+| `/revise Describe changes` | Invalidate affected documents/approvals and regenerate; existing data resources are never silently destroyed |
+| `/refresh-research New evidence/URLs` | Re-retrieve evidence and invalidate decisions based on stale sources |
+| `/review CODE` | Record a separate source/security review acknowledgment (not an automated certification) |
+| `/attest COMPLIANCE-REVIEWED` | Record that a suitably qualified reviewer addressed regulated-category concerns |
+| `/resume` | Recover an interrupted or failed build/provision/preview/release using the **original approved SHA** |
 
-If no response appears, check **Actions → Buildkit · guided product build**, the issue author’s write/maintain/admin permission, and PR-creation permissions. Preview errors are in **Buildkit · Cloudflare Preview and browser verification**; production errors in **Buildkit · approved production release**.
+Buildkit persists before a dispatch, checks real Actions runs before retries, and will not duplicate a still-running workflow. If a run completed but its final callback was lost, the workflow is reconciled and, when safe, only the **same approved request** is repeated. For implementation, each runner performs a small number of dependency-ready blocks, commits their evidence and auto-dispatches the next batch. If auto-continuation fails, `/resume` recovers without discarding completed blocks.
 
-### What happens when something fails?
+If an infrastructure/preview adapter is missing or an API token is insufficient, Buildkit stops with a named blocker. Add the required capability or revise the approved HLD; **do not quietly switch to Cloudflare or falsify test results**.
 
-- **Missing API key**: add the named Actions secret; comment `/resume`.
-- **No market research result**: configure `BUILDKIT_SEARCH_ENDPOINT` or provide source URLs in `/refresh-research your-links`; Buildkit refreshes the source bundle and revokes dependent approvals rather than reusing stale evidence.
-- **Critical feasibility failure**: read `spikes/results.json`, correct the implementation or provide safe test access, and `/resume`. Documentation GET probes do **not** prove integration behaviour.
-- **No Worker name/account credentials**: set the exact Worker variable and separated preview/prod tokens.
-- **Preview binding conflict**: use dedicated preview D1/KV/R2/etc. resources; production bindings must never be tested in preview.
-- **E2E failure**: examine Playwright artifacts and browser logs; `/revise` can regenerate blocked implementation work. A screenshot alone is not proof of interaction.
-- **Secret exposed**: block release; revoke/rotate and audit history; `.gitignore` is not remediation.
-- **Uncertain preview or release dispatch**: use `/status`, then `/resume` after the prior run is no longer active. Buildkit reconciles the original SHA using the Actions run name instead of silently choosing a new commit.\n- **Production release fails after merge**: do not claim deployed; inspect the Actions record and Cloudflare state, restore/roll back if needed.
+## Security and verification boundaries
 
-## Safety boundary / limits
+Gitignore, protected paths, secret-pattern checks, Gitleaks scanning and isolated build/test containers reduce credential exposure but cannot guarantee no leaks. Revoke/rotate any exposed secret immediately. The coding CLI still holds its dedicated model key, so this is not a hardened multi-tenant hostile-code execution service.
 
-`.gitignore`, protected path checks, known-secret patterns, Gitleaks pre-commit and CI, and separated Docker test environments reduce leaks but **cannot promise 100% prevention**. The coding agent itself runs with a model provider credential; use a dedicated key with a strict quota and do not treat this harness as safe for hostile untrusted developers. The separate Cloudflare workflow holds deployment credentials only when the relevant step runs.
+Critical feasibility findings need executed evidence, not a model's assertion. Generated E2E tests should be inspected for meaningful user journeys. For regulated work, automated classification and human acknowledgment are **not** legal certification. Production operations should account for rollbacks, backup, migrations, quota and monitoring.
 
-A deployment to Cloudflare should be paired with observability, backups/rollback and correct data migration. Cloudflare Workers Preview resource isolation is only as good as its configured bindings; make sure real customer PII never goes into an unprotected preview.
+Do not infer a live provider-backed product build from the harness's mocked CI flow. Provider permissions and third-party credentials are never copied from the public template, and no Cloudflare resources are provisioned until the relevant user-approved product workflow runs.
 
-**Costs:** Buildkit itself is MIT open source with no subscription. Coding-model tokens, GitHub limits, Cloudflare resources, model inference and commercial APIs remain external costs.
-
-**Verification boundary:** Local/CI tests of the harness include mocked providers and GitHub and genuine Docker/npm tests, but they do not replace a real-provider/Cloudflare account end-to-end trial. Nor does an automated category classifier certify GDPR, SAMA, HIPAA, medical-device compliance or any local law.
-
-## Maintainer references
-
-[README](../README.md) · [Current code audit](AUDIT.md) · [PRD](PRD_TEMPLATE.md) · [HLD](HLD_TEMPLATE.md) · [LLD](LLD_TEMPLATE.md) · [Release checklist](RELEASE_CHECKLIST.md)
-
-- [Cloudflare Workers Preview docs](https://developers.cloudflare.com/workers/previews/get-started/)
-- [Preview resource isolation](https://developers.cloudflare.com/workers/previews/resources/)
-- [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
-- [GitHub Actions authorization](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication)
+[README](../README.md) · [Execution adapters](EXECUTION_ADAPTERS.md) · [Cloudflare provisioning](CLOUDFLARE.md) · [Evidence](EVIDENCE.md) · [Release checklist](RELEASE_CHECKLIST.md)
