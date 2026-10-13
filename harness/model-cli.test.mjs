@@ -16,14 +16,17 @@ test('pinned OpenCode accepts noninteractive flags and the resolved least-privil
     BUILDKIT_MODEL:'qwen/test-model-no-inference',OPENROUTER_API_KEY:'not-a-real-api-key'};
   const profile=resolveModel(env);
   const safe=opencodeEnvironment(profile,env,home,false);
-  const run=args=>{
+  const run=(args,{help=false}={})=>{
     const result=spawnSync('opencode',args,{cwd:work,env:safe,encoding:'utf8',input:'',timeout:60000,maxBuffer:8e6});
     assert.equal(result.status,0,'Pinned CLI command failed: '+args.join(' ')+'\n'+String(result.stderr||result.error||result.stdout).slice(-2000));
-    return String(result.stdout||'');
+    const output=String(result.stdout||'');
+    if(help)return output+'\n'+String(result.stderr||'');
+    assert.ok(output.trim(),'CLI produced no structured output: '+args.join(' ')+'\n'+String(result.stderr||'').slice(-1000));
+    return output;
   };
   try{
     assert.ok(run(['--version']).includes(OPENCODE_VERSION));
-    const help=run(['--pure','run','--help']);
+    const help=run(['--pure','run','--help'],{help:true});
     assert.match(help,/format/);assert.match(help,/model/);assert.match(help,/agent/);
     const config=JSON.parse(run(['--pure','debug','config']));
     assert.equal(config.model,'buildkit/'+profile.model);
