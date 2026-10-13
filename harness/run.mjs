@@ -319,12 +319,18 @@ export async function run(context={}) {
       validateExecutionPlan(execution);
       if(!state.planDigest){
         generate(provider,["docs/LLD.md"],"Use approved docs and LLD_TEMPLATE: concrete routes, screens, schemas, tests and rollback. Cover the whole approved MMFS, not unrelated features.");
-        generate(provider,["docs/BUILD_BLOCKS.json"],'Write JSON only: {"blocks":[{"id":"B01","goal":"Complete core user workflow","acceptance":["Behavioural test passes"]}]}. 1–3 ordered blocks B01–B03 covering approved MMFS.');
-        validateBlocks(JSON.parse(read("docs/BUILD_BLOCKS.json")));
+        generate(provider,["docs/BUILD_BLOCKS.json"],
+          "Write strict JSON {blocks:[{id:'B01',goal:'Complete user workflow...',"+
+          "dependsOn:[],requirements:['FR-01'],acceptance:['Observable test passes']}, ...]}. "+
+          "Produce AS MANY independent or dependent small vertical slices as necessary "+
+          "for every FR requirement in EXECUTION_PLAN. No fixed total block limit. "+
+          "Use valid B01, B02, B03 etc identifiers, dependencies must reference known block IDs, "+
+          "and map every approved FR to at least one block and verifiable acceptance test.");
+        validateBlocks(JSON.parse(read("docs/BUILD_BLOCKS.json")),execution.requirements);
         state.planDigest=digest(entries(STAGE_FILES.implementation));persist("buildkit: implementation plan");
       }
       if(state.planDigest!==digest(entries(STAGE_FILES.implementation)))throw Error("Implementation plan changed since checkpoint.");
-      const blocks=validateBlocks(JSON.parse(read("docs/BUILD_BLOCKS.json")));
+      const blocks=validateBlocks(JSON.parse(read("docs/BUILD_BLOCKS.json")),execution.requirements);
       for(const b of blocks){
         if(state.completedBlocks.some(x=>x.id===b.id))continue;
         const specs=digest(entries(Object.values(STAGE_FILES).flat()));
