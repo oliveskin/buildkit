@@ -608,13 +608,24 @@ export async function run(context={}) {
     await comment("A human attestation was recorded for this profile. "+
       "Buildkit does not certify legal compliance; comment /resume after reviewing any blocker.");return;
   }else if(cmd?.name==="resume"){
-    if(!["blocked","working"].includes(state.status)){await comment("Only blocked or interrupted work can resume.");return;}
+    if(!["blocked","working","awaiting_preview","awaiting_provision","deploy_pending"].includes(state.status)){
+      await comment("Only blocked or unfinished workflow requests can resume.");return;
+    }
     if(state.status==="working"&&state.runId&&state.runId!==env.GITHUB_RUN_ID){
       const previous=await api("GET","/actions/runs/"+state.runId);
       if(previous.status!=="completed"){await comment("Previous run is still active; use its Actions page.");return;}
     }
     state.lastError=null;
-    if(state.stage==="deploying"){
+    if(state.stage==="provisioning"&&state.provisionRequest){
+      await sendWorkflow({state,request:state.provisionRequest,api,persist,comment,retry:true});
+      return;
+    }
+    if(state.pendingContinuation){
+      state.pendingContinuation=false;
+      state.status="working";
+      persist("buildkit: resume verified block checkpoint");
+      go=true;
+    }else if(state.stage==="deploying"){
       if(!state.releaseRequest){await comment("Original approved release request missing. Do not dispatch a different commit.");return;}
       if(context.releaseForTest){
         const result=await context.releaseForTest();
@@ -624,7 +635,7 @@ export async function run(context={}) {
       await sendWorkflow({state,request:state.releaseRequest,api,persist,comment,retry:true});
       return;
     }
-    if(state.stage==="implementation"&&state.previewRequest){
+    if(!go && state.stage==="implementation"&&state.previewRequest){
       if(context.previewForTest){
         state.previewRequest=null;go=true;
       }else{
