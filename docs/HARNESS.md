@@ -7,7 +7,7 @@ Use **GitHub Issues** for instructions and approvals, **Actions** for execution,
 1. Create a **private** repository from Buildkit (or copy the harness + playbook into an existing repo).
 2. Enable GitHub Actions and grant **Read and write permissions** for the workflow token, including **Allow GitHub Actions to create and approve pull requests** (Settings → Actions → General), as applicable to your plan. Only authorized collaborators can start paid work.
 3. Configure **one** repository secret: `OPENAI_API_KEY` (default Codex) **or** `ANTHROPIC_API_KEY` (Claude). API billing is separate. Optional repo variable `BUILDKIT_PROVIDER=claude`; optional `BUILDKIT_REVIEW_PROVIDER` for separate review. Do not paste secrets into issues.
-4. Create the `buildkit:idea` label, then open **Issues → New issue → Build a product**. Labeling starts discovery; alternatively comment `/start` on your issue.
+4. Open **Issues → New issue → Build a product**. An issue titled `[Product] ...` starts discovery; alternatively comment `/start` on your issue. You may optionally create/use the `buildkit:idea` label.
 5. Buildkit writes `docs/DIRECTION.md`, opens/updates an overview PR, and comments with a one-time approval code.
 6. Reply `/approve CODE` or `/revise your feedback`. A revised output gets a new code. Use `/status` any time.
 7. Approval drives PRD/HLD/feasibility notes, then 1–3 bounded implementation blocks, local tests and a preview review gate.
