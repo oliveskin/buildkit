@@ -1,0 +1,24 @@
+name: Build a product
+description: Tell Buildkit what you want to build; it will research and ask for approvals.
+title: "[Product] "
+labels: ["buildkit:idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe your idea. Buildkit proposes scope and asks for your approval; it won't deploy production automatically.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What product do you want?
+      description: Who needs it, and what should it do? A few sentences is enough.
+      placeholder: An app that helps small businesses...
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Anything that matters? (optional)
+      description: Preferred stack, budget, existing integrations, languages or privacy requirements.
+    validations:
+      required: false
