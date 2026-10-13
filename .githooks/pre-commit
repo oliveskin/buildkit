@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+node harness/scan-local.mjs --staged
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --no-banner --redact --staged .
+else
+  echo 'Gitleaks not installed locally; GitHub CI still runs the required full scan.'
+fi

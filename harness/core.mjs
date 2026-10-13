@@ -2,14 +2,15 @@ import { createHash, randomBytes } from "node:crypto";
 
 export const PRODUCT_LABEL = "buildkit:idea";
 export const STAGE_FILES = Object.freeze({
-  direction: ["docs/DIRECTION.md"],
-  architecture: ["docs/PRD.md", "docs/HLD.md", "docs/FEASIBILITY.md"],
+  direction: ["docs/DIRECTION.md", "docs/research/EVIDENCE.json"],
+  architecture: ["docs/PRD.md", "docs/HLD.md", "docs/FEASIBILITY.md","spikes/plan.json","spikes/results.json"],
+  release: ["docs/security/PROFILE.json","docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"],
   implementation: ["docs/LLD.md", "docs/BUILD_BLOCKS.json"],
 });
-export const GATE_NEXT = Object.freeze({direction:"architecture", architecture:"implementation", preview:"release-ready"});
+export const GATE_NEXT = Object.freeze({direction:"architecture",architecture:"implementation",preview:"release",release:"deploying"});
 export const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export function parseCommand(body = "") {
-  const match = String(body).trim().match(/^\/(start|status|approve|revise|resume)(?:\s+([\s\S]*))?$/i);
+  const match = String(body).trim().match(/^\/(start|status|approve|revise|resume|attest)(?:\s+([\s\S]*))?$/i);
   return match ? { name: match[1].toLowerCase(), arg: (match[2] || "").trim() } : null;
 }
 export function mayOperate(permission) {
@@ -43,7 +44,7 @@ export function permittedChange(path) {
   const forbidden = [".github", "harness", ".agents", ".claude", ".codex", ".buildkit", "node_modules", ".git", "scripts"];
   if (forbidden.some(x=>path===x || path.startsWith(x+"/"))) return false;
   if (["AGENTS.md","CLAUDE.md","PROMPTS.md","README.md","START-HERE.md",".gitignore"].includes(path)) return false;
-  if (/(^|\/)\.(env(\.|$)|dev\.vars|npmrc$|yarnrc|mcp\.json$)/.test(path) || /(^|\/)(id_rsa|id_ed25519|credentials\.json)(\.|$)/.test(path)) return false;
+  if ((/(^|\/)\.(env(\.|$)|dev\.vars|npmrc$|yarnrc|mcp\.json$)/.test(path) && !/(^|\/)\.(env|dev\.vars)\.example$/.test(path)) || /(^|\/)(id_rsa|id_ed25519|credentials\.json)(\.|$)/.test(path)) return false;
   return true;
 }
 export function selectProvider(env) {

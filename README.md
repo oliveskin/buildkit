@@ -1,75 +1,73 @@
 # Buildkit
 
-**Approval-driven AI product building, directly in GitHub.** Turn an idea into PRD, HLD, LLD and reviewable code with Claude Code or Codex. You make the important decisions; Buildkit manages the next step.
+**Build a real product by describing an idea in GitHub — and reviewing the decisions, evidence, live preview, and production release instead of managing prompts.**
 
-## Start a product
+Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring your own GitHub account, one Claude/Codex API key, and a Cloudflare account for deployment. APIs, compute and optional hosting can still incur charges.
 
-1. **[Use this template](https://github.com/tinmanlabsl/buildkit/generate)** to create your own **private product repository**.
-2. In that new repo, enable Actions and **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**. Organization policy may require an administrator.
-3. Add **one Actions repository secret**: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The matching provider is selected automatically; Codex is the default with both keys. API charges are yours.
-4. Open **Issues → New issue → Build a product**, describe your idea, and submit with the `[Product]` title prefix.
-5. Review the generated summary and draft PR. Reply `/approve CODE` or `/revise your feedback` on the **issue**. Buildkit selects the next step.
+## Quick start
 
-**[Full setup, example walkthrough and recovery guide →](docs/HARNESS.md)**
+1. Click **[Use this template](https://github.com/tinmanlabsl/buildkit/generate)**. Create a **private** repository for your product.
+2. In the new repository: **Settings → Actions → General**. Enable Actions and **Allow GitHub Actions to create and approve pull requests**. The workflows request their own scoped permissions.
+3. Add **one** GitHub Actions secret: `OPENAI_API_KEY` (Codex) **or** `ANTHROPIC_API_KEY` (Claude). A consumer subscription does not necessarily cover API usage.
+4. Open **Issues → New issue → Build a product**, describe what you want in a few sentences, and submit. Buildkit opens a draft PR and comments when it needs a decision.
+5. On the **issue**, reply `/approve CODE` (use the supplied code), `/revise what to change`, or `/status`. Review the source evidence and architecture before approving.
 
-```text
-Idea → direction approval
-     → PRD + HLD + feasibility notes → architecture approval
-     → LLD + 1–3 build blocks + npm checks → code-review approval
-     → manual review, merge and deployment
-```
+**Before the first Cloudflare preview**, add the [Cloudflare settings below](#cloudflare-preview-and-release-setup). Buildkit stops with instructions if they are missing. It never asks you to paste credentials into an issue.
 
-Commands: `/start` · `/status` · `/approve CODE` · `/revise feedback` · `/resume`.
+## The approval-driven workflow
 
-## What the guided workflow does
+| Phase | Buildkit executes | You review |
+|---|---|---|
+| **Product direction** | Retrieve GitHub/Hugging Face records and any configured market search sources; propose MMFS and document gaps | User, problem, exclusions, cited sources |
+| **Architecture and feasibility** | Produce PRD/HLD; run allowed real HTTP/Node probes; record results and block critical failures | Requirements, alternatives, evidence and feasibility |
+| **Implementation** | Generate LLD, 1–3 bounded build blocks, tests and isolated npm verification; security checks | Code, build evidence and intended user journey |
+| **Cloudflare live preview** | Validate isolation, scan dependencies/secrets, publish Worker Preview, run Playwright tests/screenshots | **Real preview URL** and screenshots; `/approve CODE` or `/revise ...` |
+| **Production decision** | Assess security, compliance classification and release readiness | Exact app/review version, costs and deployment target |
+| **Production release** | **Only after your separate approval**, merge the approved PR and deploy the exact commit via Cloudflare, then smoke-test the URL | Actual deployment evidence and follow-up monitoring |
 
-| You review | Buildkit produces |
-|---|---|
-| Product direction | Target user, smallest marketable feature set, exclusions and risks |
-| Product and architecture | PRD, HLD and feasibility notes |
-| Implementation | LLD, bounded code blocks, isolated npm build/test results and optional separate-model static review |
+**Every gate is bound to the files reviewed.** Buildkit records evidence and saves completed blocks so `/resume` does not blindly restart everything. Commands: `/start`, `/status`, `/approve CODE`, `/revise feedback`, `/resume`, and for regulated products after qualified review `/attest COMPLIANCE-REVIEWED`.
 
-Approvals bind the actual file contents. Approved specifications are protected against silent changes. Each successful block is checkpointed, so `/resume` does not discard previously verified work. A failed build is a failed Actions run. Generated npm scripts run in isolated containers without GitHub/model credentials or runner-home access.
+### Research must distinguish proof from assumptions
 
-**Current boundary:** this is a starter harness for small Node/npm web products, not a guaranteed autonomous product factory. The code-review gate is **not a hosted preview**. Market/OSS research and real feasibility experiments need sources/access and may remain unverified. Model and assertion quality still need review. It **never auto-merges or deploys**. See [tested behaviour and remaining gaps](docs/AUDIT.md).
+Research is stored in `docs/research/EVIDENCE.json` and `docs/research/SOURCES.md`. The direction document cites evidence IDs such as `[E-001]`. Sources missing or market claims without evidence are explicitly marked **UNVERIFIED**. Feasibility plans and real observations are stored in `spikes/plan.json` and `spikes/results.json`; critical failures **block** the next stage. A retrieved model card or API documentation alone is not proof that your model or integration works.
 
-The source template is enabled on `tinmanlabsl/buildkit`. Each user's product repo needs its own Actions permissions and keys; settings and secrets are not inherited.
+The default research routes cover GitHub and Hugging Face metadata; customer/competitor web discovery needs a configured search endpoint or supplied source URLs. No tool can guarantee every market claim is true. Read the gaps, not just the recommendation.
 
-## Manual playbook and reusable materials
+## Cloudflare preview and release setup
 
-These are the optional local/manual route, not extra setup required for the GitHub harness.
+Do this **in the generated product repository**, not `tinmanlabsl/buildkit`:
 
-| Material | Open |
-|---|---|
-| Practical build sequence, commands, low-cost stack and references | [START-HERE.md](START-HERE.md) |
-| 14 prompts: research, specification, implementation, review and release | [PROMPTS.md](PROMPTS.md) |
-| Guided first-product exercise | [FIRST-PRODUCT-EXERCISE.md](FIRST-PRODUCT-EXERCISE.md) |
-| Product specification templates | [PRD](docs/PRD_TEMPLATE.md) · [HLD](docs/HLD_TEMPLATE.md) · [LLD](docs/LLD_TEMPLATE.md) |
-| Decision, status and release records | [Decisions](docs/DECISIONS.md) · [Status](docs/STATUS.md) · [Release checklist](docs/RELEASE_CHECKLIST.md) |
-| Agent instructions | [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) |
-| Inference examples, not configured production backends | [Modal](examples/modal_inference.py) · [Cloudflare Worker](examples/cloudflare_worker_proxy.ts) |
+| GitHub Actions setting | Required for | Meaning |
+|---|---|---|
+| Secret `CLOUDFLARE_ACCOUNT_ID` | Preview and release | Cloudflare account identifier |
+| Secret `CLOUDFLARE_PREVIEW_TOKEN` | Preview | Scoped permission to create/update **preview** deployments |
+| Secret `CLOUDFLARE_PROD_TOKEN` | Production | Separate credential for approved **production** deployment |
+| Variable `BUILDKIT_WORKER_NAME` | Preview and release | Exact intended Worker name; must equal `wrangler.json` `name` |
 
-## Six project skills
+For applications using D1, KV, R2 or other account-level storage, create **separate Preview-safe resources** and list the matching bindings under `previews` in `wrangler.json`; Buildkit refuses obvious production-binding reuse. A public Preview URL is **not secret**: configure [Cloudflare Access](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) for private content, and never expose real customer data in test fixtures. Cloudflare permissions, app integrations and migrations may still require user authorization.
 
-| Skill | Purpose | Codex / cross-agent | Claude |
-|---|---|---|---|
-| Anti-slop | Reject fake integrations, generic UI and inert controls | [Skill](.agents/skills/anti-slop/SKILL.md) | [Skill](.claude/skills/anti-slop/SKILL.md) |
-| Scope guard | Stay within approved MMFS | [Skill](.agents/skills/scope-guard/SKILL.md) | [Skill](.claude/skills/scope-guard/SKILL.md) |
-| OSS-first | Reuse vetted components before rebuilding | [Skill](.agents/skills/oss-first/SKILL.md) | [Skill](.claude/skills/oss-first/SKILL.md) |
-| HF model evaluation | Check task fitness, licensing and serving cost | [Skill](.agents/skills/hf-model-eval/SKILL.md) | [Skill](.claude/skills/hf-model-eval/SKILL.md) |
-| Cost-first | Avoid unnecessary infrastructure and inference | [Skill](.agents/skills/cost-first/SKILL.md) | [Skill](.claude/skills/cost-first/SKILL.md) |
-| Release truth | Separate built, reviewed, merged, deployed and verified | [Skill](.agents/skills/release-truth/SKILL.md) | [Skill](.claude/skills/release-truth/SKILL.md) |
+Optional: `BUILDKIT_SEARCH_ENDPOINT` (repository variable; HTTPS JSON search endpoint returning `results`), `BUILDKIT_SEARCH_KEY` (secret), and `BUILDKIT_SPIKE_HOSTS` (variable; comma-separated approved public hosts). External API keys are stored only in secrets and never in `wrangler.json`, issue comments or code.
 
-Six definitions are mirrored for the two agent conventions. The [copy script](scripts/copy-skills-for-claude.sh) keeps them aligned. Skill instructions are not proof that every check ran; browser and deployment checks need the corresponding tools and evidence.
+## Security and cost principles
 
-## Cost and release rules
+- Sensitive filenames and values are blocked before commit. **Gitleaks** runs in the GitHub harness and CI against the repository/diff; a local hook can be installed with `bash scripts/install-hooks.sh`.
+- `.gitignore` is necessary but **not sufficient**: tracked files and normal source files are also scanned. If a key leaks, **revoke/rotate it**; Git history cleanup alone is not remediation.
+- Generated npm scripts run in isolated containers without model/GitHub keys. The coding agent still receives the selected model key; it is not a security boundary for hostile tenants or arbitrary third-party code.
+- Cloudflare preview and production credentials are separate from coding-agent credentials. Approval gates prevent automatic production deployment; failures stop the workflow rather than silently claiming success.
+- This free repository does **not** pay for coding-model tokens, third-party APIs, GitHub runner overages, Cloudflare paid resources or GPU workloads.
 
-Use deterministic code first; adopt a model only when justified. Cloudflare can host the finished application; Modal is an optional inference host, not a required harness service. Free infrastructure does not mean free model/API usage. Set budgets, protect secrets and independently review generated code before exposing it to real users.
+## More detailed guides
 
-**One useful complete workflow beats a large unfinished demo.** Do not silently reduce approved requirements to fit a three-block run.
+- **[Complete walkthrough, setup, approvals, troubleshooting](docs/HARNESS.md)**
+- **[Specification templates](docs/PRD_TEMPLATE.md)**: [PRD](docs/PRD_TEMPLATE.md) · [HLD](docs/HLD_TEMPLATE.md) · [LLD](docs/LLD_TEMPLATE.md)
+- **[Release checklist](docs/RELEASE_CHECKLIST.md)**
+- **[Prompts reference](PROMPTS.md)**, [manual playbook](START-HERE.md), [worked exercise](FIRST-PRODUCT-EXERCISE.md)
+- **[Agent rules](AGENTS.md)** and project-local skills in `.agents/skills/` and `.claude/skills/`
+- **[Architecture/examples](examples/)**: Cloudflare Worker and Modal inference (examples, not automatically configured infrastructure)
+- [Prior security audit](docs/AUDIT.md)
 
-## Project status and reuse
+### Current proof boundary
 
-[Audit and outstanding work](docs/AUDIT.md) · [About metadata](docs/ABOUT.md)
+Unit/flow tests and GitHub CI exercise the controller with mocked AI/GitHub and real Docker/npm fixtures, not a paid-provider end-to-end product build. The Cloudflare preview/release jobs require each user's authorized account and real credentials. Generated E2E test **quality**, required compliance sign-off and real customer integration must still be assessed. See workflow logs and evidence; do not equate a passing CI run with business or regulatory assurance.
 
-No licence has been selected yet. Do not describe the public repository as unrestricted open source until an explicit reuse licence is added by the maintainer.
+**Licence:** [MIT](LICENSE). This is a single open-source workflow, not artificially separated into feature tiers.

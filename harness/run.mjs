@@ -6,6 +6,11 @@ import { spawnSync } from "node:child_process";
 import { PRODUCT_LABEL, STAGE_FILES, GATE_NEXT, parseCommand, mayOperate, makeState,
   newGate, checkApproval, validateBlocks, permittedChange, selectProvider, cleanEnv, agentConfig, digest } from "./core.mjs";
 import { inspectFile, assertChanges, makeTestSnapshot, containerArgs, redact } from "./security.mjs";
+import { collectResearch, verifyResearch } from "./research.mjs";
+import { executeSpikes, verifySpikePlan } from "./feasibility.mjs";
+import { assertClean } from "./security-gate.mjs";
+import { classifyProduct, assessRelease } from "./compliance.mjs";
+import { verifyBrowserResults } from "./cloudflare.mjs";
 
 // Dependencies are injectable only through this module API for offline regression tests.
 export async function run(context={}) {
@@ -39,7 +44,11 @@ export async function run(context={}) {
   const comment=body=>api("POST","/issues/"+number+"/comments",{body:redact(body,secrets)});
   const allFiles=()=>[...new Set(list("ls-files","-co","--exclude-standard","-z"))].sort();
   const changes=()=>[...new Set([...list("diff","--name-only","-z","HEAD"),...list("ls-files","--others","--exclude-standard","-z")])];
-  function guard(){assertChanges(root,changes().filter(p=>p!==".buildkit/state.json"),secrets);}
+  function guard(){
+    const changed=changes().filter(p=>p!==".buildkit/state.json");
+    assertChanges(root,changed,secrets);
+    assertClean(root,changed);
+  }
   const entries=files=>files.map(p=>inspectFile(root,p));
   function approved() {
     for(const [p,expected] of Object.entries(state.approvedDocs||{}))
@@ -51,6 +60,14 @@ export async function run(context={}) {
   }
   function persist(message) {
     guard(); write(".buildkit/state.json",JSON.stringify(state,null,2)+"\n");
+    assertClean(root,[".buildkit/state.json"]);
+    if (!context.skipGitleaks) {
+      // Container has no secrets/network and receives the entire tree read-only.
+      // Keep this before git add/commit; gitignore alone cannot protect a repository.
+      command("docker",["run","--rm","--network=none","--cap-drop=ALL",
+        "--security-opt=no-new-privileges","-v",root+":/scan:ro","-w","/scan",
+        "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb","dir","--redact","--no-banner","/scan"],{timeout:120000});
+    }
     git("add","-A");
     const staged=list("diff","--cached","--name-only","-z");
     if(staged.some(p=>p!==".buildkit/state.json"&&!permittedChange(p)))throw Error("Protected staged files rejected.");
@@ -82,9 +99,12 @@ export async function run(context={}) {
     }
     const head=git("rev-parse","HEAD"), before=readOnly?digest(stageFiles("preview")):null;
     const stateBefore=read(".buildkit/state.json");
+    const controlled=["docs/research/EVIDENCE.json","spikes/results.json","docs/security/PROFILE.json","docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"];
+    const evidenceBefore=digest(entries(controlled));
     const output=command(provider,cfg.args,{env:cfg.env,input:task,timeout:600000});
     if(git("rev-parse","HEAD")!==head)throw Error("Agent committed code; controller rejected it.");
     if(read(".buildkit/state.json")!==stateBefore)throw Error("Agent modified controller state.");
+    if(digest(entries(controlled))!==evidenceBefore)throw Error("Agent modified controller evidence.");
     guard();approved();
     if(readOnly&&digest(stageFiles("preview"))!==before)throw Error("Reviewer modified reviewed files.");
     return redact(output,secrets);
@@ -116,7 +136,7 @@ export async function run(context={}) {
     }
     try {
       const install=read("package-lock.json")?"ci":"install";
-      for(const [args,network] of [[["npm",install,"--ignore-scripts","--no-audit","--no-fund"],true],[["npm","run","build"],false],[["npm","test"],false]]){
+      for(const [args,network] of [[["npm",install,"--ignore-scripts","--no-audit","--no-fund"],true],[["npm","audit","--omit=dev","--audit-level=high"],true],[["npm","run","build"],false],[["npm","test"],false]]){
         const output=command("docker",containerArgs(snapshot,args,network),{timeout:180000});
         log.push("$ "+args.join(" ")+"\n"+output+"\nExit: 0");
       }
@@ -146,13 +166,68 @@ export async function run(context={}) {
     const provider=selectProvider(env);agentConfig(provider,env);
     approved();
     if(state.stage==="direction"){
-      generate(provider,STAGE_FILES.direction,"Propose target customer/job, 3–5 MMFS actions, exclusions, OSS reuse, risks, assumptions, success criterion. Separate sourced facts from hypotheses; never fabricate research.");
-      await gate("direction","Review the proposed scope and assumptions. Unverified research is not market validation.");
+      if(!read("docs/research/EVIDENCE.json")){
+        const obtain=context.collectResearch||collectResearch;
+        const sourceLinks=(state.brief.match(/https:\/\/[^\s)\]<>"]+/g)||[]).slice(0,5);
+        const evidence=await obtain(state.brief,{request:context.researchFetch||fetch,
+          githubToken:token,searchEndpoint:env.BUILDKIT_SEARCH_ENDPOINT||"",
+          searchKey:env.BUILDKIT_SEARCH_KEY||"",userLinks:sourceLinks});
+        write("docs/research/EVIDENCE.json",JSON.stringify(evidence,null,2)+"\n");
+        write("docs/research/SOURCES.md","# Retrieved evidence\n\n"+
+          evidence.sources.map(x=>"- ["+x.id+"] "+x.category+" — "+x.title+": "+x.url+
+          "\n  - Checked: "+x.retrievedAt+"; excerpt: "+x.excerpt).join("\n")+"\n\n"+
+          "Gaps: "+(evidence.gaps||[]).join("; ")+"\n");
+        persist("buildkit: retrieved research evidence");
+      }
+      const evidence=JSON.parse(read("docs/research/EVIDENCE.json"));
+      generate(provider,["docs/DIRECTION.md"],"Read docs/research/EVIDENCE.json and SOURCES.md. Propose target customer/job, "+
+        "3–5 MMFS actions, exclusions, OSS reuse, risks, assumptions, success criterion. Cite actual "+
+        "evidence IDs [E-001] and explicitly label any absent market evidence UNVERIFIED. Never "+
+        "claim evidence not actually collected; prioritize attributable sources over guesses.");
+      verifyResearch(evidence,read("docs/DIRECTION.md"));
+      await gate("direction","Research sources, MMFS, assumptions and evidence gaps are linked. "+
+        "Market demand may remain UNVERIFIED if no independent market source exists.");
     }else if(state.stage==="architecture"){
       generate(provider,["docs/PRD.md"],"Use DIRECTION and PRD_TEMPLATE to produce testable requirements and failure states.");
       generate(provider,["docs/HLD.md"],"Use PRD and HLD_TEMPLATE: cheapest sensible architecture, integrations, auth, privacy and costs.");
-      generate(provider,["docs/FEASIBILITY.md"],"Rank the three biggest technical risks. Record executed evidence or UNVERIFIED and a reproducible spike plan. Explicitly flag any blocker to a real MMFS. This task does not itself execute external integration spikes.");
-      await gate("architecture","Review requirements, architecture and feasibility gaps. Approval accepts the documented risk; it does not prove an unexecuted spike.");
+      if(!read("spikes/plan.json")){
+        generate(provider,["spikes/plan.json"],"From approved DIRECTION, new PRD and HLD define schema:1 and "+
+          "1–5 real feasibility probes. Critical probes must use node_test (executed meaningful assertions) "+
+          "or http_contract (authorized endpoint request, status and content assertion). "+
+          "Reading documentation, repository metadata or HF model cards may support research "+
+          "but NEVER proves a critical integration or inference capability. "+
+          "Allowed kinds: https_read (noncritical, docs), http_contract (approved HTTPS endpoint"+
+          ", expectedStatus, expectedText or JSON path assertion),"+
+          " + expectedText), github_repository (repository URL), hf_model (model URL), node_test"+
+          " (spikes/NAME.test.mjs). Each item needs id, risk explanation >=12 chars, critical boolean,"+
+          " and for critical probes a detailed, measurable assertion,"+
+          " and exact test inputs. No fake tests, no credential writes. Create executable "+
+          "spikes/NAME.test.mjs if a node_test is chosen. Use allowed public hosts or"+
+          " those the user explicitly approved via BUILDKIT_SPIKE_HOSTS. "+
+          "If a critical capability cannot be safely tested, include a probe that fails with"+
+          " a clear blocker; never manufacture proof.");
+      }
+      const plan=JSON.parse(read("spikes/plan.json"));
+      verifySpikePlan(plan);
+      const runLocalProbe=async file=>{
+        const snapshot=makeTestSnapshot(root,allFiles());
+        try{
+          const args=containerArgs(snapshot,["node","--test",file],false);
+          const result=command("docker",args,{timeout:120000});
+          return {passed:true,output:result};
+        }finally{fs.rmSync(snapshot,{recursive:true,force:true});}
+      };
+      const probe=context.executeSpikes||executeSpikes;
+      const results=await probe(plan,{request:context.spikeFetch||fetch,
+        runNodeTest:runLocalProbe,customHosts:env.BUILDKIT_SPIKE_HOSTS||""});
+      write("spikes/results.json",JSON.stringify(results,null,2)+"\n");
+      persist("buildkit: executed feasibility checks");
+      if(results.decision!=="GO")throw Error("Critical feasibility verification blocked: "+
+        (results.blockers||[]).join("; ")+". Check spikes/results.json and use /resume after fixing the cause.");
+      generate(provider,["docs/FEASIBILITY.md"],"Report only actual observations in spikes/results.json; "+
+        "cite exact probe IDs, explain what these tests do NOT prove, give a GO/CHANGE/NO-GO decision.");
+      await gate("architecture","Review PRD, HLD and actual risk-check evidence. Critical probes passed; "+
+        "untested capabilities must still be described as UNVERIFIED.");
     }else if(state.stage==="implementation"){
       if(!state.planDigest){
         generate(provider,["docs/LLD.md"],"Use approved docs and LLD_TEMPLATE: concrete routes, screens, schemas, tests and rollback. Cover the whole approved MMFS, not unrelated features.");
@@ -165,7 +240,12 @@ export async function run(context={}) {
       for(const b of blocks){
         if(state.completedBlocks.some(x=>x.id===b.id))continue;
         const specs=digest(entries(Object.values(STAGE_FILES).flat()));
-        agent(provider,instructions()+"\nImplement only "+JSON.stringify(b)+". Scaffold a runnable npm app; include real behavioural tests. Do not edit the specification files. Tests are run separately by the controller.");
+        agent(provider,instructions()+"\nCloudflare target Worker (exact name, no substitutions): "+(env.BUILDKIT_WORKER_NAME||"NOT CONFIGURED: require the user to set BUILDKIT_WORKER_NAME")+". Do not deploy; produce wrangler.json name matching this value when configured.\nImplement only "+JSON.stringify(b)+
+          ". Build a real Cloudflare Workers compatible web app. Generate wrangler.json in strict JSON "+
+          "with approved worker name, previews.vars.ENVIRONMENT='preview', and separate preview "+
+          "resource bindings. Generate tests/e2e.spec.mjs with at least two actual user journeys "+
+          "using BASE_URL, as well as npm build/test scripts. Do not insert keys or customer data. "+
+          "Do not modify approved specifications. The controller runs tests.");
         if(digest(entries(Object.values(STAGE_FILES).flat()))!==specs)throw Error("Builder changed a specification.");
         const evidence=testApp(b);
         state.completedBlocks.push({id:b.id,checked:new Date().toISOString(),evidence});
@@ -181,8 +261,47 @@ export async function run(context={}) {
         write("docs/reviews/INDEPENDENT.md",report+"\n");
         if(!/^PASS\b/i.test(report)){persist("buildkit: independent review findings");throw Error("Independent reviewer did not PASS. See docs/reviews/INDEPENDENT.md, fix the findings, then /resume.");}
       }
-      await gate("preview","All planned blocks completed; command logs are in docs/evidence. This is CODE REVIEW, not a hosted/browser-tested preview. "+
-        (reviewer&&reviewer!==provider?"Separate-model static review passed.":"Independent manual review is still required."));
+      const profile=classifyProduct(state.brief,read("docs/PRD.md"),read("docs/HLD.md"));
+      write("docs/security/PROFILE.json",JSON.stringify(profile,null,2)+"\n");
+      state.complianceProfileDigest=digest(inspectFile(root,"docs/security/PROFILE.json"));
+      state.security={secretScan:{passed:true,method:"controller content/path scan"},
+        dependencyAudit:{passed:true,method:"isolated npm audit --omit=dev --audit-level=high"}};
+      if(context.previewForTest){
+        const demo=await context.previewForTest();
+        verifyBrowserResults(demo,demo.previewUrl);
+        write("docs/evidence/PREVIEW.json",JSON.stringify({...demo,outcome:"GO",
+          sourceSha:git("rev-parse","HEAD")},null,2)+"\n");
+        state.preview={url:demo.previewUrl,sourceSha:git("rev-parse","HEAD"),report:"docs/evidence/PREVIEW.json"};
+        await gate("preview","Simulated browser result used by offline harness tests ONLY.");
+      }else{
+        state.status="awaiting_preview";state.previewSourceSha=git("rev-parse","HEAD");state.gate=null;
+        persist("buildkit: awaiting Cloudflare Preview for #"+number);
+        await pr();
+        await comment("Buildkit completed the testable code blocks. Running Cloudflare Preview, "+
+          "isolated dependency/security checks and Playwright browser tests. "+
+          "If setup is missing, add CLOUDFLARE_PREVIEW_TOKEN, CLOUDFLARE_ACCOUNT_ID and "+
+          "BUILDKIT_WORKER_NAME in this product repository. Review happens after a real Preview URL exists.");
+        await api("POST","/actions/workflows/buildkit-preview.yml/dispatches",
+          {ref:baseBranch,inputs:{issue_number:String(number),candidate_sha:checkpoint}});
+      }
+    }else if(state.stage==="release"){
+      const profile=JSON.parse(read("docs/security/PROFILE.json"));
+      const preview=JSON.parse(read("docs/evidence/PREVIEW.json"));
+      const report=assessRelease({profile,secretScan:state.security?.secretScan,
+        dependencyAudit:state.security?.dependencyAudit,preview,
+        independentReview:{passed:!!state.previewReviewedBy},
+        externalAttestation:{approved:!!state.complianceReview?.confirmed &&
+          state.complianceReview.profileDigest===state.complianceProfileDigest}});
+      write("docs/security/RELEASE_REVIEW.json",JSON.stringify({...report,
+        reviewedPreviewSha:state.preview?.sourceSha||null,
+        productionWorker:env.BUILDKIT_WORKER_NAME||null},null,2)+"\n");
+      persist("buildkit: security and release assessment for #"+number);
+      if(report.decision!=="GO")throw Error("Production blocked: "+report.blockers.join("; ")+
+        " For regulated products obtain a qualified review, then comment "+
+        "/attest COMPLIANCE-REVIEWED and /resume.");
+      await gate("release","Explicit production approval: release only the browser-reviewed "+
+        "commit to the approved Cloudflare Worker. This may merge the product PR and "+
+        "incur ongoing Cloudflare/model usage charges. No deployment until you approve.");
     }else throw Error("Invalid stage.");
   }
   if(!token||!repo)throw Error("GitHub runtime missing.");
@@ -220,7 +339,8 @@ export async function run(context={}) {
       (prURL?". [Draft PR]("+prURL+")":"")+(state.gate?". /approve "+state.gate.code:"")+
       (state.lastError?". Last error: "+state.lastError:"")+". No automatic merge or deployment.");return;
   }
-  if(state.status==="release-ready"){await comment("Manual release review pending. Nothing was merged or deployed.");return;}
+  if(state.status==="release-ready"){await comment("Production release complete in test harness. Check actual Actions deployment status for real projects.");return;}
+  if(state.status==="deploy_pending"){await comment("Production workflow dispatched for approved commit. Check Actions for actual release result.");return;}
   let go=false;
   if((labeled||cmd?.name==="start")&&state.status==="new")go=true;
   else if(cmd?.name==="approve"){
@@ -231,22 +351,65 @@ export async function run(context={}) {
     for(const p of STAGE_FILES[gateState.stage]||[])state.approvedDocs[p]=digest(inspectFile(root,p));
     state.history.push({time:new Date().toISOString(),event:"approved",stage:gateState.stage,by:who,digest:gateState.digest,revision:gateState.revision});
     state.stage=GATE_NEXT[gateState.stage];state.gate=null;state.feedback="";
-    if(state.stage==="release-ready"){
-      if(id)state.eventIds.push(id);state.status="release-ready";persist("buildkit: code review accepted");
-      await comment("Code review approved. Independently verify, merge and deploy manually. No browser/live deployment verification occurred.");return;
+    if(gateState.stage==="preview")state.previewReviewedBy=who;
+    if(state.stage==="deploying"){
+      if(id)state.eventIds.push(id);
+      state.status="deploy_pending";state.releaseApprovedBy=who;
+      state.releaseApprovedDigest=gateState.digest;
+      persist("buildkit: authorized exact production release #"+number);
+      if(context.releaseForTest){
+        const fake=await context.releaseForTest();
+        state.status=fake?.deployed?"release-ready":"blocked";
+        persist("buildkit: simulated release only");
+        await comment("Offline test release simulation.");return;
+      }
+      await comment("Production release explicitly approved. [Deployment workflow](https://github.com/"+repo+
+        "/actions). Approved exact commit: "+checkpoint);
+      await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
+        {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
+      return;
     }
     go=true;
   }else if(cmd?.name==="revise"){
-    if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix a blocker, then /resume.");return;}
-    if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5–2000 characters of feedback.");return;}
-    state.feedback=cmd.arg;state.revision++;state.planDigest=null;state.completedBlocks=[];go=true;
+    if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix blocker, then /resume.");return;}
+    if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
+    state.feedback=cmd.arg;state.revision++;
+    if(state.stage==="release"){state.stage="implementation";state.previewReviewedBy=null;}
+    state.planDigest=null;state.completedBlocks=[];
+    for(const p of ["docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"]){
+      if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+    }
+    go=true;
+  }else if(cmd?.name==="attest"){
+    if(cmd.arg!=="COMPLIANCE-REVIEWED"||state.stage!=="release"){
+      await comment("For regulated products, after qualified human review use /attest COMPLIANCE-REVIEWED.");return;
+    }
+    state.complianceReview={confirmed:true,by:who,profileDigest:state.complianceProfileDigest,
+      at:new Date().toISOString()};
+    persist("buildkit: recorded qualified-review attestation for #"+number);
+    await comment("A human attestation was recorded for this profile. "+
+      "Buildkit does not certify legal compliance; comment /resume after reviewing any blocker.");return;
   }else if(cmd?.name==="resume"){
     if(!["blocked","working"].includes(state.status)){await comment("Only blocked or interrupted work can resume.");return;}
     if(state.status==="working"&&state.runId&&state.runId!==env.GITHUB_RUN_ID){
       const previous=await api("GET","/actions/runs/"+state.runId);
       if(previous.status!=="completed"){await comment("Previous run is still active; use its Actions page.");return;}
     }
-    state.lastError=null;go=true;
+    state.lastError=null;
+    if(state.stage==="deploying"){
+      if(state.status!=="blocked"){await comment("Release not blocked.");return;}
+      state.status="deploy_pending";
+      persist("buildkit: retrying approved production deployment");
+      if(context.releaseForTest){
+        state.status="release-ready";
+        persist("buildkit: simulated release retry");
+      }else{
+        await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
+          {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
+        await comment("Retrying the separately approved release. Review the Actions run.");}
+      return;
+    }
+    go=true;
   }else if(labeled||cmd?.name==="start"){await comment("Already initialized. Use /status.");return;}
   if(!go)return;
   if(id)state.eventIds=[...state.eventIds,id].slice(-100);

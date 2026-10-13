@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -20,9 +21,13 @@ jobs:
         run: |
           for file in harness/*.mjs; do node --check "$file"; done
           node --test harness/*.test.mjs
-      - name: Validate GitHub YAML
+      - name: Validate GitHub YAML including duplicate keys
+        run: ruby scripts/validate-workflows.rb
+      - name: Run open-source Gitleaks on full Git history and working tree
         run: |
-          ruby -ryaml -e 'Dir[".github/**/*.yml"].each { |f| YAML.load_file(f) }; d = YAML.load_file(".github/ISSUE_TEMPLATE/product-idea.yml"); raise "Invalid issue form" unless d["body"].is_a?(Array) && d["body"].any? { |x| x["type"] == "textarea" }'
+          docker pull ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD:/scan:ro" -w /scan ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb git --redact --no-banner /scan
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD:/scan:ro" -w /scan ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb dir --redact --no-banner /scan
       - name: Real isolated npm execution (fake AI and GitHub; no API spend)
         env:
           BUILDKIT_TEST_REAL_DOCKER: '1'

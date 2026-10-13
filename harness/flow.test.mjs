@@ -40,7 +40,9 @@ function fixture(){
       else if(suffix==="/pulls"){
         if(f.deniedPR)return new Response("{}",{status:403});
         f.hasPR=true;result={html_url:"https://github.com/test/product/pull/2"};
-      }else if(suffix.startsWith("/actions/runs/"))result={status:"completed"};
+      }else if(suffix==="/actions/workflows/buildkit-preview.yml/dispatches" && options.method==="POST") {f.previewDispatches=(f.previewDispatches||0)+1; result={};}
+      else if(suffix==="/actions/workflows/buildkit-release.yml/dispatches" && options.method==="POST") {f.releaseDispatches=(f.releaseDispatches||0)+1; result={};}
+      else if(suffix.startsWith("/actions/runs/"))result={status:"completed"};
       else throw Error("Unexpected network request: "+options.method+" "+suffix);
       return new Response(JSON.stringify(result),{status:200});
     };
@@ -54,7 +56,10 @@ function fixture(){
         const outputs=options.input.match(/Only write: (.+)\. Start Markdown/);
         if(outputs){
           for(const p of outputs[1].split(", ")){
-            const text=p.endsWith(".json")?JSON.stringify({blocks:[1,2].map(i=>({id:"B0"+i,goal:"Complete a genuinely useful user workflow",acceptance:["Behavioural test proves the outcome"]}))}):"# "+p+"\n\nDecision: keep a small complete workflow. Evidence: UNVERIFIED. Review required before spending or deployment.\n";
+            const text=p.endsWith("spikes/plan.json")?JSON.stringify({schema:1,probes:[{id:"RISK-01",risk:"Verify the runtime endpoint responds as expected",kind:"http_contract",url:"https://developers.cloudflare.com/workers/",method:"GET",critical:true,assertion:"Contract response matches expected Cloudflare marker",
+    expectedText:"Cloudflare"}]}):
+              p.endsWith(".json")?JSON.stringify({blocks:[1,2].map(i=>({id:"B0"+i,goal:"Complete a genuinely useful user workflow",acceptance:["Behavioural test proves the outcome"]}))}):
+              "# "+p+"\n\nDecision: keep a small complete workflow. Evidence: [E-001]. Market UNVERIFIED. Review required before spending or deployment.\n";
             fs.mkdirSync(path.dirname(path.join(work,p)),{recursive:true});fs.writeFileSync(path.join(work,p),text);
           }
         }else{
@@ -75,7 +80,15 @@ function fixture(){
       }
       throw Error("Unexpected executable "+cmd);
     };
-    try{return await run({env,cwd:work,fetch:fetchMock,execute});}
+    try{return await run({env,cwd:work,fetch:fetchMock,execute,
+      collectResearch:async()=>({schema:1,query:"task tracker",retrievedAt:"2026-10-13",categories:{oss:1,model:0,market:0},
+        gaps:["Market demand UNVERIFIED"],sources:[{id:"E-001",category:"oss",title:"Known open source repo",
+          excerpt:"A public task tracker repo",url:"https://github.com/sample/tool",retrievedAt:"2026-10-13"}]}),
+      executeSpikes:async()=>({schema:1,decision:"GO",results:[{id:"RISK-01",critical:true,outcome:"PASS",
+        evidence:"Observed stub response: synthetic test only"}],blockers:[]}),
+      previewForTest:async()=>({schema:1,previewUrl:"https://demo-bk-app.user.workers.dev",
+        httpStatus:200,screenshot:true,pageErrors:0,behaviouralTestsPassed:true}),
+      releaseForTest:async()=>({deployed:true})});}
     finally{
       const state=spawnSync("git",["--git-dir="+remote,"show","buildkit/issue-1:.buildkit/state.json"],{encoding:"utf8"});
       f.state=state.status===0?JSON.parse(state.stdout):null;
@@ -91,8 +104,9 @@ test("complete three-gate flow keeps all writes on product branch",async()=>{
     await f.invoke();assert.equal(f.state.gate.stage,"direction");assert.ok(f.comments.some(c=>c.includes("Decision: keep")));
     await f.approve();assert.equal(f.state.gate.stage,"architecture");
     await f.approve();assert.equal(f.state.gate.stage,"preview");assert.equal(f.state.completedBlocks.length,2);
+    await f.approve();assert.equal(f.state.gate.stage,"release");
     await f.approve();assert.equal(f.state.status,"release-ready");
-    assert.equal(f.state.history.filter(x=>x.event==="approved").length,3);
+    assert.equal(f.state.history.filter(x=>x.event==="approved").length,4);
   }finally{f.cleanup();}
 });
 test("failed block resumes from verified checkpoint rather than repeating B01",async()=>{

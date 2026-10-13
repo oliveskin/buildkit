@@ -1,0 +1,157 @@
+name: Buildkit · approved production release
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Product Issue
+        required: true
+        type: string
+      approved_sha:
+        description: Exact release-approved branch SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: buildkit-production-${{ inputs.issue_number }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          ref: ${{ inputs.approved_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Ensure deployment credentials and approved worker are configured
+        env:
+          PROD_TOKEN: ${{ secrets.CLOUDFLARE_PROD_TOKEN }}
+          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TARGET_WORKER: ${{ vars.BUILDKIT_WORKER_NAME }}
+        run: |
+          test -n "$PROD_TOKEN" || { echo 'CLOUDFLARE_PROD_TOKEN missing'; exit 1; }
+          test -n "$ACCOUNT_ID" || { echo 'CLOUDFLARE_ACCOUNT_ID missing'; exit 1; }
+          test -n "$TARGET_WORKER" || { echo 'BUILDKIT_WORKER_NAME missing'; exit 1; }
+      - name: Verify consent, unchanged application, evidence, compliance and Cloudflare target
+        env:
+          BUILDKIT_APP_PATH: app
+          BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          BUILDKIT_APPROVED_SHA: ${{ inputs.approved_sha }}
+          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+        run: node controller/harness/release-operation.mjs preflight
+      - name: Re-run dependency vulnerability audit (no release token)
+        run: |
+          docker run --rm --network=bridge --cap-drop=ALL --security-opt=no-new-privileges \
+            -v "$PWD/app:/workspace" -w /workspace -e CI=true node:22-bookworm-slim \
+            sh -c 'npm ci --ignore-scripts --no-audit --no-fund && npm audit --omit=dev --audit-level=high'
+      - name: Block leaked credentials before merge
+        run: |
+          docker pull ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD/app:/scan:ro" -w /scan ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb git --redact --no-banner /scan
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD/app:/scan:ro" -w /scan ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb dir --redact --no-banner /scan
+  merge:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      main_sha: ${{ steps.merge.outputs.main_sha }}
+    steps:
+      - id: merge
+        name: Merge only the exact approved, browser-tested head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ inputs.issue_number }}
+          APPROVED: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          pr="$(gh pr list --repo "$REPO" --head "buildkit/issue-$ISSUE" --state all --limit 100 --json number --jq '.[0].number')"
+          test -n "$pr" || { echo "Expected product PR not found"; exit 1; }
+          details="$(gh api "repos/$REPO/pulls/$pr")"
+          test "$(printf '%s' "$details" | jq -r '.head.sha')" = "$APPROVED" || { echo "Approved SHA changed"; exit 1; }
+          if test "$(printf '%s' "$details" | jq -r '.merged')" = "true"; then
+            main_sha="$(printf '%s' "$details" | jq -er '.merge_commit_sha')"
+          else
+            gh pr ready "$pr" --repo "$REPO" || true
+            merged="$(gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f sha="$APPROVED" -f merge_method=squash -f commit_title="Buildkit: approved product #$ISSUE")"
+            main_sha="$(printf '%s' "$merged" | jq -er '.sha')"
+          fi
+          current_main="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$main_sha" || { echo "Main has changed; manual recovery required"; exit 1; }
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: [merge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      url: ${{ steps.publish.outputs.deployment-url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge.outputs.main_sha }}
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check merged SHA exactly
+        env:
+          MERGED_SHA: ${{ needs.merge.outputs.main_sha }}
+        run: |
+          test "$(git -C app rev-parse HEAD)" = "$MERGED_SHA"
+      - name: Deploy approved main commit to Cloudflare production
+        id: publish
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_PROD_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: app
+          wranglerVersion: '4.136.3'
+          command: deploy
+      - name: Smoke test actual production URL
+        env:
+          PRODUCTION_URL: ${{ steps.publish.outputs.deployment-url }}
+        run: |
+          test -n "$PRODUCTION_URL" || { echo "No verified Worker deployment URL"; exit 1; }
+          curl --fail --silent --show-error --max-time 30 "$PRODUCTION_URL" >/dev/null
+  finalize:
+    if: always() && github.ref_name == github.event.repository.default_branch
+    needs: [verify, merge, deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: controller
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          ref: buildkit/issue-${{ inputs.issue_number }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Persist deployment status and notify original issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILDKIT_APP_PATH: app
+          BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          BUILDKIT_APPROVED_SHA: ${{ inputs.approved_sha }}
+          BUILDKIT_DEPLOY_STATUS: ${{ needs.deploy.result }}
+          BUILDKIT_DEPLOY_MAIN_SHA: ${{ needs.merge.outputs.main_sha }}
+          BUILDKIT_PRODUCTION_URL: ${{ needs.deploy.outputs.url }}
+        run: node controller/harness/release-operation.mjs finalize

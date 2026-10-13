@@ -20,7 +20,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  actions: read
+  actions: write
 concurrency:
   group: buildkit-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
@@ -42,6 +42,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Prepare pinned Gitleaks image before coding secrets are provided
+        run: docker pull ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
       - name: Run Buildkit controller
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,6 +51,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BUILDKIT_PROVIDER: ${{ vars.BUILDKIT_PROVIDER }}
           BUILDKIT_REVIEW_PROVIDER: ${{ vars.BUILDKIT_REVIEW_PROVIDER }}
+          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+          BUILDKIT_SEARCH_ENDPOINT: ${{ vars.BUILDKIT_SEARCH_ENDPOINT }}
+          BUILDKIT_SEARCH_KEY: ${{ secrets.BUILDKIT_SEARCH_KEY }}
+          BUILDKIT_SPIKE_HOSTS: ${{ vars.BUILDKIT_SPIKE_HOSTS }}
           BUILDKIT_DISPATCH_ISSUE: ${{ inputs.issue_number }}
           BUILDKIT_DISPATCH_COMMAND: ${{ inputs.command }}
         run: node harness/run.mjs
