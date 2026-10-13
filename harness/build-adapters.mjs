@@ -10,7 +10,7 @@ export function buildRecipe(adapter,{hasNodeLock=false,hasPythonRequirements=fal
   if(adapter==='python-pytest'){
     if(!hasPythonRequirements)throw Error('Python test adapter requires requirements.txt with pytest and required dependencies.');
     return {image:'python:3.12-slim',steps:[
-      {args:['python','-m','pip','install','--no-input','-r','requirements.txt'],network:true},
+      {args:['python','-m','pip','install','--no-input','--target','.bkdeps','-r','requirements.txt'],network:true},
       {args:['python','-m','compileall','-q','.'],network:false},
       {args:['python','-m','pytest','-q'],network:false}
     ]};
