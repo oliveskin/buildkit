@@ -2,8 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 
 export const PRODUCT_LABEL = "buildkit:idea";
 export const STAGE_FILES = Object.freeze({
-  direction: ["docs/DIRECTION.md"],
-  architecture: ["docs/PRD.md", "docs/HLD.md", "docs/FEASIBILITY.md"],
+  direction: ["docs/DIRECTION.md", "docs/research/EVIDENCE.json"],
+  architecture: ["docs/PRD.md", "docs/HLD.md", "docs/FEASIBILITY.md","spikes/plan.json","spikes/results.json"],
   implementation: ["docs/LLD.md", "docs/BUILD_BLOCKS.json"],
 });
 export const GATE_NEXT = Object.freeze({direction:"architecture", architecture:"implementation", preview:"release-ready"});

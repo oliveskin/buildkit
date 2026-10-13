@@ -54,7 +54,9 @@ function fixture(){
         const outputs=options.input.match(/Only write: (.+)\. Start Markdown/);
         if(outputs){
           for(const p of outputs[1].split(", ")){
-            const text=p.endsWith(".json")?JSON.stringify({blocks:[1,2].map(i=>({id:"B0"+i,goal:"Complete a genuinely useful user workflow",acceptance:["Behavioural test proves the outcome"]}))}):"# "+p+"\n\nDecision: keep a small complete workflow. Evidence: UNVERIFIED. Review required before spending or deployment.\n";
+            const text=p.endsWith("spikes/plan.json")?JSON.stringify({schema:1,probes:[{id:"RISK-01",risk:"Verify the runtime endpoint responds as expected",kind:"https_read",url:"https://developers.cloudflare.com/workers/",critical:true,expectedText:"Cloudflare"}]}):
+              p.endsWith(".json")?JSON.stringify({blocks:[1,2].map(i=>({id:"B0"+i,goal:"Complete a genuinely useful user workflow",acceptance:["Behavioural test proves the outcome"]}))}):
+              "# "+p+"\n\nDecision: keep a small complete workflow. Evidence: [E-001]. Market UNVERIFIED. Review required before spending or deployment.\n";
             fs.mkdirSync(path.dirname(path.join(work,p)),{recursive:true});fs.writeFileSync(path.join(work,p),text);
           }
         }else{
@@ -75,7 +77,12 @@ function fixture(){
       }
       throw Error("Unexpected executable "+cmd);
     };
-    try{return await run({env,cwd:work,fetch:fetchMock,execute});}
+    try{return await run({env,cwd:work,fetch:fetchMock,execute,
+      collectResearch:async()=>({schema:1,query:"task tracker",retrievedAt:"2026-10-13",categories:{oss:1,model:0,market:0},
+        gaps:["Market demand UNVERIFIED"],sources:[{id:"E-001",category:"oss",title:"Known open source repo",
+          excerpt:"A public task tracker repo",url:"https://github.com/sample/tool",retrievedAt:"2026-10-13"}]}),
+      executeSpikes:async()=>({schema:1,decision:"GO",results:[{id:"RISK-01",critical:true,outcome:"PASS",
+        evidence:"Observed stub response: synthetic test only"}],blockers:[]})});}
     finally{
       const state=spawnSync("git",["--git-dir="+remote,"show","buildkit/issue-1:.buildkit/state.json"],{encoding:"utf8"});
       f.state=state.status===0?JSON.parse(state.stdout):null;

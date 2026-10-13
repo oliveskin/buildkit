@@ -6,6 +6,10 @@ import { spawnSync } from "node:child_process";
 import { PRODUCT_LABEL, STAGE_FILES, GATE_NEXT, parseCommand, mayOperate, makeState,
   newGate, checkApproval, validateBlocks, permittedChange, selectProvider, cleanEnv, agentConfig, digest } from "./core.mjs";
 import { inspectFile, assertChanges, makeTestSnapshot, containerArgs, redact } from "./security.mjs";
+import { collectResearch, verifyResearch } from "./research.mjs";
+import { executeSpikes, verifySpikePlan } from "./feasibility.mjs";
+import { assertClean } from "./security-gate.mjs";
+import { classifyProduct } from "./compliance.mjs";
 
 // Dependencies are injectable only through this module API for offline regression tests.
 export async function run(context={}) {
@@ -39,7 +43,11 @@ export async function run(context={}) {
   const comment=body=>api("POST","/issues/"+number+"/comments",{body:redact(body,secrets)});
   const allFiles=()=>[...new Set(list("ls-files","-co","--exclude-standard","-z"))].sort();
   const changes=()=>[...new Set([...list("diff","--name-only","-z","HEAD"),...list("ls-files","--others","--exclude-standard","-z")])];
-  function guard(){assertChanges(root,changes().filter(p=>p!==".buildkit/state.json"),secrets);}
+  function guard(){
+    const changed=changes().filter(p=>p!==".buildkit/state.json");
+    assertChanges(root,changed,secrets);
+    assertClean(root,changed);
+  }
   const entries=files=>files.map(p=>inspectFile(root,p));
   function approved() {
     for(const [p,expected] of Object.entries(state.approvedDocs||{}))
@@ -50,7 +58,7 @@ export async function run(context={}) {
     return entries(files);
   }
   function persist(message) {
-    guard(); write(".buildkit/state.json",JSON.stringify(state,null,2)+"\n");
+    guard(); write(".buildkit/state.json",JSON.stringify(state,null,2)+"\n"); assertClean(root,[".buildkit/state.json"]);
     git("add","-A");
     const staged=list("diff","--cached","--name-only","-z");
     if(staged.some(p=>p!==".buildkit/state.json"&&!permittedChange(p)))throw Error("Protected staged files rejected.");
@@ -82,9 +90,12 @@ export async function run(context={}) {
     }
     const head=git("rev-parse","HEAD"), before=readOnly?digest(stageFiles("preview")):null;
     const stateBefore=read(".buildkit/state.json");
+    const controlled=["docs/research/EVIDENCE.json","spikes/results.json","docs/security/PROFILE.json","docs/evidence/PREVIEW.json"];
+    const evidenceBefore=digest(entries(controlled));
     const output=command(provider,cfg.args,{env:cfg.env,input:task,timeout:600000});
     if(git("rev-parse","HEAD")!==head)throw Error("Agent committed code; controller rejected it.");
     if(read(".buildkit/state.json")!==stateBefore)throw Error("Agent modified controller state.");
+    if(digest(entries(controlled))!==evidenceBefore)throw Error("Agent modified controller evidence.");
     guard();approved();
     if(readOnly&&digest(stageFiles("preview"))!==before)throw Error("Reviewer modified reviewed files.");
     return redact(output,secrets);
@@ -146,13 +157,62 @@ export async function run(context={}) {
     const provider=selectProvider(env);agentConfig(provider,env);
     approved();
     if(state.stage==="direction"){
-      generate(provider,STAGE_FILES.direction,"Propose target customer/job, 3–5 MMFS actions, exclusions, OSS reuse, risks, assumptions, success criterion. Separate sourced facts from hypotheses; never fabricate research.");
-      await gate("direction","Review the proposed scope and assumptions. Unverified research is not market validation.");
+      if(!read("docs/research/EVIDENCE.json")){
+        const obtain=context.collectResearch||collectResearch;
+        const sourceLinks=(state.brief.match(/https:\/\/[^\s)\]<>"]+/g)||[]).slice(0,5);
+        const evidence=await obtain(state.brief,{request:context.researchFetch||fetch,
+          githubToken:token,searchEndpoint:env.BUILDKIT_SEARCH_ENDPOINT||"",
+          searchKey:env.BUILDKIT_SEARCH_KEY||"",userLinks:sourceLinks});
+        write("docs/research/EVIDENCE.json",JSON.stringify(evidence,null,2)+"\n");
+        write("docs/research/SOURCES.md","# Retrieved evidence\n\n"+
+          evidence.sources.map(x=>"- ["+x.id+"] "+x.category+" — "+x.title+": "+x.url+
+          "\n  - Checked: "+x.retrievedAt+"; excerpt: "+x.excerpt).join("\n")+"\n\n"+
+          "Gaps: "+(evidence.gaps||[]).join("; ")+"\n");
+        persist("buildkit: retrieved research evidence");
+      }
+      const evidence=JSON.parse(read("docs/research/EVIDENCE.json"));
+      generate(provider,["docs/DIRECTION.md"],"Read docs/research/EVIDENCE.json and SOURCES.md. Propose target customer/job, "+
+        "3–5 MMFS actions, exclusions, OSS reuse, risks, assumptions, success criterion. Cite actual "+
+        "evidence IDs [E-001] and explicitly label any absent market evidence UNVERIFIED. Never "+
+        "claim evidence not actually collected; prioritize attributable sources over guesses.");
+      verifyResearch(evidence,read("docs/DIRECTION.md"));
+      await gate("direction","Research sources, MMFS, assumptions and evidence gaps are linked. "+
+        "Market demand may remain UNVERIFIED if no independent market source exists.");
     }else if(state.stage==="architecture"){
       generate(provider,["docs/PRD.md"],"Use DIRECTION and PRD_TEMPLATE to produce testable requirements and failure states.");
       generate(provider,["docs/HLD.md"],"Use PRD and HLD_TEMPLATE: cheapest sensible architecture, integrations, auth, privacy and costs.");
-      generate(provider,["docs/FEASIBILITY.md"],"Rank the three biggest technical risks. Record executed evidence or UNVERIFIED and a reproducible spike plan. Explicitly flag any blocker to a real MMFS. This task does not itself execute external integration spikes.");
-      await gate("architecture","Review requirements, architecture and feasibility gaps. Approval accepts the documented risk; it does not prove an unexecuted spike.");
+      if(!read("spikes/plan.json")){
+        generate(provider,["spikes/plan.json"],"From approved DIRECTION, new PRD and HLD define schema:1 and "+
+          "1–5 concrete critical feasibility probes. Allowed kinds: https_read (URL + expectedStatus"+
+          " + expectedText), github_repository (repository URL), hf_model (model URL), node_test"+
+          " (spikes/NAME.test.mjs). Each item needs id, risk explanation >=12 chars, critical boolean,"+
+          " and exact test inputs. No fake tests, no credential writes. Create executable "+
+          "spikes/NAME.test.mjs if a node_test is chosen. Use allowed public hosts or"+
+          " those the user explicitly approved via BUILDKIT_SPIKE_HOSTS. "+
+          "If a critical capability cannot be safely tested, include a probe that fails with"+
+          " a clear blocker; never manufacture proof.");
+      }
+      const plan=JSON.parse(read("spikes/plan.json"));
+      verifySpikePlan(plan);
+      const runLocalProbe=async file=>{
+        const snapshot=makeTestSnapshot(root,allFiles());
+        try{
+          const args=containerArgs(snapshot,["node","--test",file],false);
+          const result=command("docker",args,{timeout:120000});
+          return {passed:true,output:result};
+        }finally{fs.rmSync(snapshot,{recursive:true,force:true});}
+      };
+      const probe=context.executeSpikes||executeSpikes;
+      const results=await probe(plan,{request:context.spikeFetch||fetch,
+        runNodeTest:runLocalProbe,customHosts:env.BUILDKIT_SPIKE_HOSTS||""});
+      write("spikes/results.json",JSON.stringify(results,null,2)+"\n");
+      persist("buildkit: executed feasibility checks");
+      if(results.decision!=="GO")throw Error("Critical feasibility verification blocked: "+
+        (results.blockers||[]).join("; ")+". Check spikes/results.json and use /resume after fixing the cause.");
+      generate(provider,["docs/FEASIBILITY.md"],"Report only actual observations in spikes/results.json; "+
+        "cite exact probe IDs, explain what these tests do NOT prove, give a GO/CHANGE/NO-GO decision.");
+      await gate("architecture","Review PRD, HLD and actual risk-check evidence. Critical probes passed; "+
+        "untested capabilities must still be described as UNVERIFIED.");
     }else if(state.stage==="implementation"){
       if(!state.planDigest){
         generate(provider,["docs/LLD.md"],"Use approved docs and LLD_TEMPLATE: concrete routes, screens, schemas, tests and rollback. Cover the whole approved MMFS, not unrelated features.");
