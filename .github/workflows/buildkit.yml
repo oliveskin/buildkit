@@ -1,0 +1,55 @@
+name: Buildkit · guided product build
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing product idea issue number
+        required: true
+        type: number
+      command:
+        description: start, status, or resume (no approvals by dispatch)
+        required: true
+        default: status
+        type: choice
+        options: [start, status, resume]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: buildkit-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  guided-build:
+    if: >-
+      (github.event_name == 'issues' && github.event.label.name == 'buildkit:idea') ||
+      (github.event_name == 'issue_comment' && !github.event.issue.pull_request && startsWith(github.event.comment.body, '/')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run Buildkit controller
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BUILDKIT_PROVIDER: ${{ vars.BUILDKIT_PROVIDER }}
+          BUILDKIT_REVIEW_PROVIDER: ${{ vars.BUILDKIT_REVIEW_PROVIDER }}
+          BUILDKIT_DISPATCH_ISSUE: ${{ inputs.issue_number }}
+          BUILDKIT_DISPATCH_COMMAND: ${{ inputs.command }}
+        run: node harness/run.mjs
