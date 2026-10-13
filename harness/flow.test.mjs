@@ -79,12 +79,17 @@ function fixture(){
           const result=spawnSync(cmd,args,options);
           if(result.status!==0 && args.includes("dir") && args.some(a=>String(a).includes("gitleaks"))){
             // Diagnose the rule/path only; never print the scanner's matched secret.
-            const diag=spawnSync(cmd,[...args,"--report-format","json","--report-path","/dev/stdout"],options);
+            const reportDir=fs.mkdtempSync(path.join(os.tmpdir(),"bk-scanner-report-"));
             try{
-              const findings=JSON.parse(String(diag.stdout||"[]"));
-              const safe=findings.map(x=>({rule:x.RuleID,file:x.File})).slice(0,5);
-              process.stderr.write("Redacted Gitleaks test diagnostic: "+JSON.stringify(safe)+"\n");
-            }catch{process.stderr.write("Redacted Gitleaks test diagnostic unavailable.\n");}
+              const imageIndex=args.findIndex(a=>String(a).includes("gitleaks/gitleaks:"));
+              const diagnosticArgs=[...args.slice(0,imageIndex),"-v",reportDir+":/report",
+                ...args.slice(imageIndex),"--report-format","json","--report-path","/report/findings.json"];
+              spawnSync(cmd,diagnosticArgs,options);
+              const findings=JSON.parse(fs.readFileSync(path.join(reportDir,"findings.json"),"utf8"));
+              process.stderr.write("Redacted Gitleaks rule/path only: "+
+                JSON.stringify(findings.map(x=>({rule:x.RuleID,file:x.File})).slice(0,5))+"\n");
+            }catch{process.stderr.write("Gitleaks diagnostic report unavailable.\n");}
+            finally{fs.rmSync(reportDir,{recursive:true,force:true});}
           }
           return result;
         }
