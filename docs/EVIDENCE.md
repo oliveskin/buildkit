@@ -8,7 +8,7 @@ Buildkit is designed to **refuse unsupported success claims**. A generated summa
 - `docs/research/SOURCES.md`: human-readable index.
 - `docs/DIRECTION.md`: product recommendation citing actual `[E-001]` style evidence IDs.
 
-The default retrieval covers public GitHub repository listings and Hugging Face model metadata. Real market/customer research requires a configured search service or supplied sources. No market evidence → mark `UNVERIFIED`. Even a valid citation can be irrelevant; inspect primary sources, conflicting reports, licence text, last meaningful commit and user complaints.
+The default retrieval covers public GitHub repository listings and Hugging Face model metadata. Real market/customer research requires a configured search service or supplied sources. No market evidence → mark `UNVERIFIED`. If access or supplied sources change, issue `/refresh-research source URLs or changed context`: the controller re-collects evidence and invalidates any downstream approvals relying on the previous source set. Even a valid citation can be irrelevant; inspect primary sources, conflicting reports, licence text, last meaningful commit and user complaints.
 
 For a serious proposed OSS component, verify licence, API interface, maintenance, dependencies and at least one integration test before adopting.
 

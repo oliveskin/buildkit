@@ -10,7 +10,9 @@ GitHub Issues are the user's interface; Actions handles execution; draft PRs pre
 4. Set provider API billing alerts/limits. A consumer subscription doesn't imply included GitHub Actions API access.
 5. Open **Issues → New issue → Build a product** and describe the customer, desired outcome and hard constraints. Leave the `[Product]` title prefix in place. Buildkit posts links and approval codes.
 
-**Before a live preview**, configure Cloudflare (below). The harness stops rather than using another project/account or silently deploying production.
+**Reproducible output:** The generated npm app declares `package.json` `buildkit.deploymentDirectory` (default `dist/buildkit`). Its `npm run build` emits a self-contained payload with a built JavaScript Worker entry or static assets and a `wrangler.json` configured with `no_bundle: true`. A secret-free job builds and hashes that output; preview and production jobs upload **the same artifact bytes** without rerunning application builds. The artifact manifest records the source commit, worker name and payload digest.
+
+**Before approving the architecture**, set the exact `BUILDKIT_WORKER_NAME` repository variable: approval immediately starts implementation, which creates the matched `wrangler.json`. Preview credentials can be configured later, before browser review. The harness stops rather than inventing a Worker or silently using another account.
 
 ### Cloudflare credentials and target
 
@@ -46,10 +48,10 @@ These settings are optional until a proposed product requires them. If research 
 |---|---|---|
 | **1. Direction** | Acquire actual source metadata and optional market references → `docs/research/EVIDENCE.json` and `docs/DIRECTION.md` | Check customer/market evidence, smallest marketable feature set, risks and explicit exclusions; `/approve CODE` or `/revise ...` |
 | **2. Architecture** | Generate PRD/HLD; create `spikes/plan.json`; execute permitted tests and record `spikes/results.json`; generate feasibility summary | Critical failed/unverified feasibility blocks. Approve real architecture and documented residual uncertainty |
-| **3. Implementation** | LLD, 1–3 bounded blocks, real isolated npm build/test/audit; review diffs and check for secrets | Failed test or protected-file modification blocks and preserves verified checkpoints |
-| **4. Cloudflare Preview** | Separate workflow checks exact SHA and isolation; Gitleaks + npm audit; deploys Worker Preview; browser job captures desktop/mobile screenshots and runs >=2 Playwright user journeys | Issue comment links to **real preview**, screenshots and logs; approve or request revision |
-| **5. Release review** | Evaluate security profile, compliance risk and actual browser evidence; link exact SHA and approved Worker | Regulated product requires qualified human sign-off; release is separately approved |
-| **6. Deployment** | Separate scoped workflow rechecks approved SHA/credentials/scan, merges the exact approved PR, deploys to Cloudflare, smoke tests URL | Result posted to Issue. Manual verification of operations, cost, backups and rollback remains required |
+| **3. Implementation** | LLD, 1–3 bounded blocks and reproducible isolated npm build/test/audit; security and secret checks | Failed test or protected-file modification blocks while successful checkpoints remain |
+| **4. Cloudflare Preview** | Build immutable self-contained output with a SHA-256 manifest; deploy that artifact (no build in credentialed jobs); run Playwright and capture screenshots | Inspect the **real preview**; approve UX using `/approve CODE`, or `/revise ...` |
+| **5. Code/security review** | Bind an independent second-provider review to the reviewed artifact, or request an explicit human PR/security examination | If requested, inspect code and security evidence and reply `/review CODE`; UX approval alone does not qualify |\n| **6. Release review** | Evaluate risk profile, code/security sign-off, actual browser results and payload digest | Regulated products require qualified human compliance review; approve production separately |
+| **7. Deployment** | Separate scoped workflow verifies approved source plus metadata-only outbox changes, reuses the **same preview-tested artifact**, merges the PR, deploys and smoke-tests | Result posted to Issue. Monitoring, backups and rollback remain the owner’s responsibility |
 
 The user is not asked to select prompts or pass documents between steps. GitHub stores version-bound state in the product branch. Research citations and approval digests are checkable; an approved PRD cannot be silently altered by an agent.
 
@@ -60,7 +62,7 @@ The user is not asked to select prompts or pass documents between steps. GitHub 
 | `/start` | Start an eligible issue |
 | `/status` | Show current step, draft PR, latest approval code or blocker |
 | `/approve CODE` | Approve exactly the presented version (copy from latest issue comment) |
-| `/revise Describe the change` | Re-run the current review stage with feedback |
+| `/revise Describe the change` | Invalidate affected outputs and dependent approvals, then regenerate; also works after a blocked preview |\n| `/refresh-research New URLs or search context` | Retrieve research again and invalidate downstream direction/architecture/implementation decisions |\n| `/review CODE` | Explicitly acknowledge a separate, version-bound source/security review after inspecting the PR; this is **not** the UX gate |
 | `/resume` | Retry a blocked/interrupted stage; preserves successful blocks |
 | `/attest COMPLIANCE-REVIEWED` | Record that a **qualified human** has reviewed the regulated product profile; not a legal certification |
 
@@ -69,13 +71,13 @@ If no response appears, check **Actions → Buildkit · guided product build**, 
 ### What happens when something fails?
 
 - **Missing API key**: add the named Actions secret; comment `/resume`.
-- **No market research result**: provide credible source URLs in the initial brief or configure `BUILDKIT_SEARCH_ENDPOINT`; claims remain explicitly UNVERIFIED.
+- **No market research result**: configure `BUILDKIT_SEARCH_ENDPOINT` or provide source URLs in `/refresh-research your-links`; Buildkit refreshes the source bundle and revokes dependent approvals rather than reusing stale evidence.
 - **Critical feasibility failure**: read `spikes/results.json`, correct the implementation or provide safe test access, and `/resume`. Documentation GET probes do **not** prove integration behaviour.
 - **No Worker name/account credentials**: set the exact Worker variable and separated preview/prod tokens.
 - **Preview binding conflict**: use dedicated preview D1/KV/R2/etc. resources; production bindings must never be tested in preview.
-- **E2E failure**: examine Playwright artifact and browser logs; request a revision. A screenshot alone is not proof of interaction.
+- **E2E failure**: examine Playwright artifacts and browser logs; `/revise` can regenerate blocked implementation work. A screenshot alone is not proof of interaction.
 - **Secret exposed**: block release; revoke/rotate and audit history; `.gitignore` is not remediation.
-- **Production release fails after merge**: do not claim deployed; inspect the Actions record and Cloudflare state, restore/roll back if needed.
+- **Uncertain preview or release dispatch**: use `/status`, then `/resume` after the prior run is no longer active. Buildkit reconciles the original SHA using the Actions run name instead of silently choosing a new commit.\n- **Production release fails after merge**: do not claim deployed; inspect the Actions record and Cloudflare state, restore/roll back if needed.
 
 ## Safety boundary / limits
 

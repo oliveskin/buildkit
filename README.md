@@ -12,7 +12,7 @@ Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring
 4. Open **Issues → New issue → Build a product**, describe what you want in a few sentences, and submit. Buildkit opens a draft PR and comments when it needs a decision.
 5. On the **issue**, reply `/approve CODE` (use the supplied code), `/revise what to change`, or `/status`. Review the source evidence and architecture before approving.
 
-**Before the first Cloudflare preview**, add the [Cloudflare settings below](#cloudflare-preview-and-release-setup). Buildkit stops with instructions if they are missing. It never asks you to paste credentials into an issue.
+**Before approving architecture (which immediately starts implementation)**, set the `BUILDKIT_WORKER_NAME` Actions repository variable to the exact intended Worker name; Buildkit refuses to invent this target. Before the first Cloudflare preview, add the [separate preview credentials below](#cloudflare-preview-and-release-setup). Buildkit stops with instructions if they are missing. It never asks you to paste credentials into an issue.
 
 ## The approval-driven workflow
 
@@ -20,18 +20,18 @@ Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring
 |---|---|---|
 | **Product direction** | Retrieve GitHub/Hugging Face records and any configured market search sources; propose MMFS and document gaps | User, problem, exclusions, cited sources |
 | **Architecture and feasibility** | Produce PRD/HLD; run allowed real HTTP/Node probes; record results and block critical failures | Requirements, alternatives, evidence and feasibility |
-| **Implementation** | Generate LLD, 1–3 bounded build blocks, tests and isolated npm verification; security checks | Code, build evidence and intended user journey |
-| **Cloudflare live preview** | Validate isolation, scan dependencies/secrets, publish Worker Preview, run Playwright tests/screenshots | **Real preview URL** and screenshots; `/approve CODE` or `/revise ...` |
-| **Production decision** | Assess security, compliance classification and release readiness | Exact app/review version, costs and deployment target |
-| **Production release** | **Only after your separate approval**, merge the approved PR and deploy the exact commit via Cloudflare, then smoke-test the URL | Actual deployment evidence and follow-up monitoring |
+| **Implementation** | Generate LLD, 1–3 bounded build blocks, source security checks and isolated npm verification | Tested code and user journeys |
+| **Cloudflare live preview** | Build a self-contained deployment artifact, hash its bytes, publish that artifact and run Playwright screenshots/user journeys | **Real preview URL**, screenshots and `/approve CODE` or `/revise ...` |
+| **Independent code/security review** | Record a separate-model PASS bound to the preview artifact, or request explicit human review | Inspect PR diff, secrets, authorization, dependency audit; `/review CODE` if prompted |\n| **Production decision** | Assess security and applicable compliance, preserving the exact reviewed artifact identity | Costs, version, security evidence and deployment target |
+| **Production release** | **Only after separate approval**, merge reviewed application code plus controller-only metadata; reuse exactly the browser-reviewed build artifact and smoke-test Cloudflare | Actual deployment evidence and follow-up monitoring |
 
-**Every gate is bound to the files reviewed.** Buildkit records evidence and saves completed blocks so `/resume` does not blindly restart everything. Commands: `/start`, `/status`, `/approve CODE`, `/revise feedback`, `/resume`, and for regulated products after qualified review `/attest COMPLIANCE-REVIEWED`.
+**Every gate is bound to the files reviewed.** Buildkit records evidence and saves completed blocks so `/resume` does not blindly restart everything. Commands: `/start`, `/status`, `/approve CODE`, `/revise feedback`, `/refresh-research optional sources`, `/review CODE` (only when a separate code/security sign-off is requested), `/resume`, and for regulated products after qualified review `/attest COMPLIANCE-REVIEWED`.
 
 ### Research must distinguish proof from assumptions
 
 Research is stored in `docs/research/EVIDENCE.json` and `docs/research/SOURCES.md`. The direction document cites evidence IDs such as `[E-001]`. Sources missing or market claims without evidence are explicitly marked **UNVERIFIED**. Feasibility plans and real observations are stored in `spikes/plan.json` and `spikes/results.json`; critical failures **block** the next stage. A retrieved model card or API documentation alone is not proof that your model or integration works.
 
-The default research routes cover GitHub and Hugging Face metadata; customer/competitor web discovery needs a configured search endpoint or supplied source URLs. No tool can guarantee every market claim is true. Read the gaps, not just the recommendation.
+The default research routes cover GitHub and Hugging Face metadata; customer/competitor web discovery needs a configured search endpoint or supplied source URLs. After adding a source/search connection or changing the market brief, use `/refresh-research details-or-links`: Buildkit must regenerate the decision and invalidate dependent approvals. No tool can guarantee every market claim is true. Read the gaps, not just the recommendation.
 
 ## Cloudflare preview and release setup
 

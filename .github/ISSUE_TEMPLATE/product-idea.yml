@@ -7,7 +7,7 @@ body:
       value: |
         Use your own product repository. Configure Actions and one provider API key first.
         Buildkit proposes scope, writes specifications and generates code for review.
-        It does not automatically deploy a website. Do not paste credentials here.
+        It creates a live Cloudflare Preview for review when you authorize it. Production merging and deployment occur ONLY after a separate explicit approval. Never paste credentials here.
   - type: textarea
     id: idea
     attributes:

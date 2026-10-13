@@ -1,4 +1,5 @@
 name: Buildkit · Cloudflare Preview and browser verification
+run-name: Buildkit preview #${{ inputs.issue_number }} @${{ inputs.candidate_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -7,7 +8,7 @@ on:
         required: true
         type: string
       candidate_sha:
-        description: Exact Git commit to preview
+        description: Exact source commit
         required: true
         type: string
 permissions:
@@ -16,9 +17,13 @@ concurrency:
   group: buildkit-${{ inputs.issue_number }}
   cancel-in-progress: false
 jobs:
-  preflight:
+  build:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      payload_digest: ${{ steps.package.outputs.payload_digest }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,55 +38,73 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify candidate and Cloudflare preview binding isolation
+      - name: Validate candidate and isolated bindings
         env:
           BUILDKIT_APP_PATH: app
           BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           BUILDKIT_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
         run: node controller/harness/preview-operation.mjs preflight
-      - name: Dependency install and vulnerability audit without any deployment credentials
+      - id: package
+        name: Build and verify self-contained output without deployment credentials
+        env:
+          BUILDKIT_APP_PATH: app
+          BUILDKIT_ARTIFACT_PATH: deploy-artifact
+          BUILDKIT_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+        run: node controller/harness/artifact.mjs build
+      - name: Scan source and built output before upload
         run: |
-          test -f app/package-lock.json
-          docker run --rm --network=bridge --cap-drop=ALL --security-opt=no-new-privileges \
-            -v "$PWD/app:/workspace" -w /workspace -e CI=true node:22-bookworm-slim \
-            sh -c 'npm ci --ignore-scripts --no-audit --no-fund && npm audit --omit=dev --audit-level=high'
-      - name: Detect secrets in all application files
-        run: |
-          docker pull ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
-          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD/app:/scan:ro" -w /scan ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb dir --redact --no-banner /scan
+          image=ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          docker pull "$image"
+          for folder in app deploy-artifact; do
+            docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD/$folder:/scan:ro" -w /scan "$image" dir --redact --no-banner /scan
+          done
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildkit-deploy-${{ inputs.candidate_sha }}-${{ github.run_attempt }}
+          path: deploy-artifact/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
   deploy:
-    needs: [preflight]
+    needs: [build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       preview_url: ${{ steps.publish.outputs.preview_url }}
     steps:
       - uses: actions/checkout@v4
         with:
-          path: app
-          ref: ${{ inputs.candidate_sha }}
+          path: controller
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install pinned Wrangler before loading Cloudflare authorization
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: deploy-artifact
+          merge-multiple: true
+      - name: Install deployment tool outside the application
+        working-directory: ${{ runner.temp }}
         run: npm install -g wrangler@4.136.3 --ignore-scripts --no-audit --no-fund
       - id: publish
-        name: Publish preview only, never production
+        name: Publish only the verified build output; no source build or npm scripts
         env:
+          BUILDKIT_ARTIFACT_PATH: deploy-artifact
+          BUILDKIT_ARTIFACT_DIGEST: ${{ needs.build.outputs.payload_digest }}
+          BUILDKIT_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
+          BUILDKIT_ISSUE_NUMBER: ${{ inputs.issue_number }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          ISSUE: ${{ inputs.issue_number }}
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_PREVIEW_TOKEN'; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
-          cd app
-          wrangler preview --name "bk-issue-$ISSUE" --json --ignore-base-config > "$RUNNER_TEMP/preview.json"
-          preview_url="$(jq -er '.preview.urls[0]' "$RUNNER_TEMP/preview.json")"
-          echo "preview_url=$preview_url" >> "$GITHUB_OUTPUT"
+        run: node controller/harness/artifact.mjs preview
   browser:
     needs: [deploy]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,13 +118,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install Playwright in secret-free browser job
+      - name: Install browser tools without deployment secrets
         run: |
           cd app
           npm ci --ignore-scripts --no-audit --no-fund
           npm install --ignore-scripts --no-audit --no-fund --no-save @playwright/test@1.64.0
           npx playwright install --with-deps chromium
-      - name: Capture desktop/mobile screenshots and execute real user journeys
+      - name: Capture screenshots and real journey reports
         env:
           BUILDKIT_APP_PATH: app
           BUILDKIT_BROWSER_OUTPUT: preview-artifacts
@@ -111,12 +134,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: buildkit-browser-evidence
+          name: buildkit-browser-evidence-${{ github.run_attempt }}
           path: preview-artifacts/
           if-no-files-found: warn
+          retention-days: 30
   finalize:
     if: always() && github.ref_name == github.event.repository.default_branch
-    needs: [preflight, deploy, browser]
+    needs: [build, deploy, browser]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -132,12 +156,15 @@ jobs:
           ref: ${{ inputs.candidate_sha }}
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/download-artifact@v4
         if: needs.browser.result == 'success'
         with:
-          name: buildkit-browser-evidence
+          name: buildkit-browser-evidence-${{ github.run_attempt }}
           path: preview-artifacts
-      - name: Update branch state and post approval or blocker to issue
+      - name: Save browser result and immutable build-artifact identity
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILDKIT_APP_PATH: app
@@ -145,5 +172,8 @@ jobs:
           BUILDKIT_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           BUILDKIT_BROWSER_JOB: ${{ needs.browser.result }}
           BUILDKIT_PREVIEW_RESULT_PATH: preview-artifacts/result.json
+          BUILDKIT_EXPECTED_PREVIEW_URL: ${{ needs.deploy.outputs.preview_url }}
+          BUILDKIT_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+          BUILDKIT_ARTIFACT_DIGEST: ${{ needs.build.outputs.payload_digest }}
           BUILDKIT_WORKER_NAME: ${{ vars.BUILDKIT_WORKER_NAME }}
         run: node controller/harness/preview-operation.mjs complete

@@ -10,7 +10,11 @@ import { collectResearch, verifyResearch } from "./research.mjs";
 import { executeSpikes, verifySpikePlan } from "./feasibility.mjs";
 import { assertClean } from "./security-gate.mjs";
 import { classifyProduct, assessRelease } from "./compliance.mjs";
-import { verifyBrowserResults } from "./cloudflare.mjs";
+import { verifyBrowserResults, validWorkerName } from "./cloudflare.mjs";
+import { researchCacheKey, shouldRefreshResearch, invalidateFrom } from "./research-control.mjs";
+import { workflowRequest, sendWorkflow, dispatchStatus } from "./dispatch.mjs";
+import { parseWorkflowCommand } from "./workflow-commands.mjs";
+import { reviewTarget, makeReviewRequest, acceptHumanReview, codeReviewPassed } from "./review-policy.mjs";
 
 // Dependencies are injectable only through this module API for offline regression tests.
 export async function run(context={}) {
@@ -18,7 +22,7 @@ export async function run(context={}) {
   const execute=context.execute||spawnSync, request=context.fetch||fetch;
   const payload=JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH,"utf8"));
   const repo=env.GITHUB_REPOSITORY, token=env.GITHUB_TOKEN, event=env.GITHUB_EVENT_NAME;
-  const secrets=[token,env.OPENAI_API_KEY,env.ANTHROPIC_API_KEY];
+  const secrets=[token,env.OPENAI_API_KEY,env.ANTHROPIC_API_KEY,env.BUILDKIT_SEARCH_KEY];
   const safe=cleanEnv(env), errorText=e=>redact(String(e?.message||e),secrets).slice(-700);
   const read=p=>fs.existsSync(path.join(root,p))?fs.readFileSync(path.join(root,p),"utf8"):"";
   const write=(p,s)=>{fs.mkdirSync(path.dirname(path.join(root,p)),{recursive:true});fs.writeFileSync(path.join(root,p),s);};
@@ -166,10 +170,16 @@ export async function run(context={}) {
     const provider=selectProvider(env);agentConfig(provider,env);
     approved();
     if(state.stage==="direction"){
-      if(!read("docs/research/EVIDENCE.json")){
+      let cachedResearch=null;
+      try{if(read("docs/research/EVIDENCE.json"))cachedResearch=JSON.parse(read("docs/research/EVIDENCE.json"));}catch{}
+      if(shouldRefreshResearch(state,env,cachedResearch,{retry:!!state.retryResearch})){
+        // Never reuse incomplete findings after the user provides more sources or search access.
+        for(const name of ["docs/research/EVIDENCE.json","docs/research/SOURCES.md","docs/DIRECTION.md"])
+          if(fs.existsSync(path.join(root,name)))fs.unlinkSync(path.join(root,name));
         const obtain=context.collectResearch||collectResearch;
-        const sourceLinks=(state.brief.match(/https:\/\/[^\s)\]<>"]+/g)||[]).slice(0,5);
-        const evidence=await obtain(state.brief,{request:context.researchFetch||fetch,
+        const researchBrief=state.brief+"\nAdditional research notes: "+(state.researchNotes||"");
+        const sourceLinks=(researchBrief.match(/https:\/\/[^\s)\]<>"]+/g)||[]).slice(0,5);
+        const evidence=await obtain(researchBrief,{request:context.researchFetch||fetch,
           githubToken:token,searchEndpoint:env.BUILDKIT_SEARCH_ENDPOINT||"",
           searchKey:env.BUILDKIT_SEARCH_KEY||"",userLinks:sourceLinks});
         write("docs/research/EVIDENCE.json",JSON.stringify(evidence,null,2)+"\n");
@@ -177,6 +187,8 @@ export async function run(context={}) {
           evidence.sources.map(x=>"- ["+x.id+"] "+x.category+" — "+x.title+": "+x.url+
           "\n  - Checked: "+x.retrievedAt+"; excerpt: "+x.excerpt).join("\n")+"\n\n"+
           "Gaps: "+(evidence.gaps||[]).join("; ")+"\n");
+        state.researchCacheFingerprint=researchCacheKey(state,env);
+        state.retryResearch=false;
         persist("buildkit: retrieved research evidence");
       }
       const evidence=JSON.parse(read("docs/research/EVIDENCE.json"));
@@ -227,8 +239,11 @@ export async function run(context={}) {
       generate(provider,["docs/FEASIBILITY.md"],"Report only actual observations in spikes/results.json; "+
         "cite exact probe IDs, explain what these tests do NOT prove, give a GO/CHANGE/NO-GO decision.");
       await gate("architecture","Review PRD, HLD and actual risk-check evidence. Critical probes passed; "+
-        "untested capabilities must still be described as UNVERIFIED.");
+        "untested capabilities must still be described as UNVERIFIED. Before approving, set the exact "+
+        "BUILDKIT_WORKER_NAME repository variable; implementation must not invent a deployment target.");
     }else if(state.stage==="implementation"){
+      if(!validWorkerName(env.BUILDKIT_WORKER_NAME||""))
+        throw Error("Set a valid BUILDKIT_WORKER_NAME repository variable before implementation, using the exact intended Cloudflare Worker name.");
       if(!state.planDigest){
         generate(provider,["docs/LLD.md"],"Use approved docs and LLD_TEMPLATE: concrete routes, screens, schemas, tests and rollback. Cover the whole approved MMFS, not unrelated features.");
         generate(provider,["docs/BUILD_BLOCKS.json"],'Write JSON only: {"blocks":[{"id":"B01","goal":"Complete core user workflow","acceptance":["Behavioural test passes"]}]}. 1–3 ordered blocks B01–B03 covering approved MMFS.');
@@ -243,7 +258,11 @@ export async function run(context={}) {
         agent(provider,instructions()+"\nCloudflare target Worker (exact name, no substitutions): "+(env.BUILDKIT_WORKER_NAME||"NOT CONFIGURED: require the user to set BUILDKIT_WORKER_NAME")+". Do not deploy; produce wrangler.json name matching this value when configured.\nImplement only "+JSON.stringify(b)+
           ". Build a real Cloudflare Workers compatible web app. Generate wrangler.json in strict JSON "+
           "with approved worker name, previews.vars.ENVIRONMENT='preview', and separate preview "+
-          "resource bindings. Generate tests/e2e.spec.mjs with at least two actual user journeys "+
+          "resource bindings. Configure package.json buildkit.deploymentDirectory='dist/buildkit'. "+
+          "The npm build command must emit a complete self-contained dist/buildkit/wrangler.json "+
+          "with no_bundle:true, a built .js entry and/or copied static assets all inside dist/buildkit. "+
+          "Do not require npm install or another build when this output is uploaded to Cloudflare. "+
+          "Generate tests/e2e.spec.mjs with at least two actual user journeys "+
           "using BASE_URL, as well as npm build/test scripts. Do not insert keys or customer data. "+
           "Do not modify approved specifications. The controller runs tests.");
         if(digest(entries(Object.values(STAGE_FILES).flat()))!==specs)throw Error("Builder changed a specification.");
@@ -260,6 +279,7 @@ export async function run(context={}) {
         const report=agent(reviewer,instructions()+"\nReview this COMPLETE diff against PRD/HLD/LLD for security, scope and regressions. Inspect files as needed. Do not edit or execute. Begin PASS or FAIL.\n"+diff,true);
         write("docs/reviews/INDEPENDENT.md",report+"\n");
         if(!/^PASS\b/i.test(report)){persist("buildkit: independent review findings");throw Error("Independent reviewer did not PASS. See docs/reviews/INDEPENDENT.md, fix the findings, then /resume.");}
+        state.modelReview={provider:reviewer,builder:provider,reportDigest:digest(read("docs/reviews/INDEPENDENT.md"))};
       }
       const profile=classifyProduct(state.brief,read("docs/PRD.md"),read("docs/HLD.md"));
       write("docs/security/PROFILE.json",JSON.stringify(profile,null,2)+"\n");
@@ -269,9 +289,11 @@ export async function run(context={}) {
       if(context.previewForTest){
         const demo=await context.previewForTest();
         verifyBrowserResults(demo,demo.previewUrl);
+        const sourceSha=git("rev-parse","HEAD");
+        const artifact=demo.artifact;
         write("docs/evidence/PREVIEW.json",JSON.stringify({...demo,outcome:"GO",
-          sourceSha:git("rev-parse","HEAD")},null,2)+"\n");
-        state.preview={url:demo.previewUrl,sourceSha:git("rev-parse","HEAD"),report:"docs/evidence/PREVIEW.json"};
+          sourceSha,artifact},null,2)+"\n");
+        state.preview={url:demo.previewUrl,sourceSha,artifact,report:"docs/evidence/PREVIEW.json"};
         await gate("preview","Simulated browser result used by offline harness tests ONLY.");
       }else{
         state.status="awaiting_preview";state.previewSourceSha=git("rev-parse","HEAD");state.gate=null;
@@ -281,15 +303,28 @@ export async function run(context={}) {
           "isolated dependency/security checks and Playwright browser tests. "+
           "If setup is missing, add CLOUDFLARE_PREVIEW_TOKEN, CLOUDFLARE_ACCOUNT_ID and "+
           "BUILDKIT_WORKER_NAME in this product repository. Review happens after a real Preview URL exists.");
-        await api("POST","/actions/workflows/buildkit-preview.yml/dispatches",
-          {ref:baseBranch,inputs:{issue_number:String(number),candidate_sha:checkpoint}});
+        const request=workflowRequest("preview",checkpoint,number,baseBranch);
+        state.previewRequest=request;
+        await sendWorkflow({state,request,api,persist,comment});
       }
     }else if(state.stage==="release"){
       const profile=JSON.parse(read("docs/security/PROFILE.json"));
       const preview=JSON.parse(read("docs/evidence/PREVIEW.json"));
+      const target=reviewTarget(state.preview);
+      if(!codeReviewPassed(state.codeReview,target)){
+        if(!state.codeReviewRequest || state.codeReviewRequest.sourceSha!==target.sourceSha ||
+           state.codeReviewRequest.payloadDigest!==target.payloadDigest)
+          state.codeReviewRequest=makeReviewRequest(target);
+        state.status="awaiting_code_review";
+        persist("buildkit: request separate code/security review");
+        await comment("### Code and security review required\n\nProduct-preview approval does not verify source security. "+
+          "Inspect the full PR diff, dependency audit, authorization, secrets and verified artifact "+
+          target.payloadDigest+". After an actual review, acknowledge with **/review "+
+          state.codeReviewRequest.code+"** on this issue. This is not a compliance certification.");
+        return;
+      }
       const report=assessRelease({profile,secretScan:state.security?.secretScan,
-        dependencyAudit:state.security?.dependencyAudit,preview,
-        independentReview:{passed:!!state.previewReviewedBy},
+        dependencyAudit:state.security?.dependencyAudit,preview,codeReview:state.codeReview,
         externalAttestation:{approved:!!state.complianceReview?.confirmed &&
           state.complianceReview.profileDigest===state.complianceProfileDigest}});
       write("docs/security/RELEASE_REVIEW.json",JSON.stringify({...report,
@@ -314,8 +349,8 @@ export async function run(context={}) {
   const access=await api("GET","/collaborators/"+encodeURIComponent(who)+"/permission",undefined,true);
   if(!mayOperate(access?.permission))return;
   const labeled=event==="issues"&&((payload.action==="labeled"&&payload.label?.name===PRODUCT_LABEL)||(payload.action==="opened"&&issue.title.startsWith("[Product]")));
-  const cmd=event==="workflow_dispatch"?parseCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
-    event==="issue_comment"&&payload.action==="created"?parseCommand(payload.comment?.body):null;
+  let cmd=event==="workflow_dispatch"?parseWorkflowCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
+    event==="issue_comment"&&payload.action==="created"?parseWorkflowCommand(payload.comment?.body):null;
   if(!labeled&&!cmd)return;
   if(event==="workflow_dispatch"&&! ["start","status","resume"].includes(cmd?.name))return;
   const metadata=await api("GET","");baseBranch=metadata.default_branch;
@@ -333,11 +368,19 @@ export async function run(context={}) {
   state.approvedDocs||={};state.baseSha||=baseSha;state.brief||=String(issue.body||issue.title).slice(0,10000);
   const id=event==="issue_comment"?"comment:"+payload.comment.id:null;
   if(id&&state.eventIds.includes(id))return;
+  if(cmd?.name==="approve"&&state.gate?.stage==="direction"&&
+     state.researchCacheFingerprint!==researchCacheKey(state,env)){
+    // New search access invalidates the displayed direction; refresh before approving it.
+    cmd={name:"refresh-research",arg:state.researchNotes||""};
+  }
   if(cmd?.name==="status"){
     await pr();
     await comment("Buildkit: **"+state.status+"** / **"+state.stage+"**. Completed blocks: "+(state.completedBlocks.map(x=>x.id).join(", ")||"none")+
       (prURL?". [Draft PR]("+prURL+")":"")+(state.gate?". /approve "+state.gate.code:"")+
-      (state.lastError?". Last error: "+state.lastError:"")+". No automatic merge or deployment.");return;
+      (state.lastError?". Last error: "+state.lastError:"")+
+      (state.codeReviewRequest?". Code/security review: /review "+state.codeReviewRequest.code:"")+
+      (state.dispatch?". Workflow request: "+state.dispatch.kind+" @"+state.dispatch.sha:"")+
+      ". Production requires separate approval.");return;
   }
   if(state.status==="release-ready"){await comment("Production release complete in test harness. Check actual Actions deployment status for real projects.");return;}
   if(state.status==="deploy_pending"){await comment("Production workflow dispatched for approved commit. Check Actions for actual release result.");return;}
@@ -351,7 +394,14 @@ export async function run(context={}) {
     for(const p of STAGE_FILES[gateState.stage]||[])state.approvedDocs[p]=digest(inspectFile(root,p));
     state.history.push({time:new Date().toISOString(),event:"approved",stage:gateState.stage,by:who,digest:gateState.digest,revision:gateState.revision});
     state.stage=GATE_NEXT[gateState.stage];state.gate=null;state.feedback="";
-    if(gateState.stage==="preview")state.previewReviewedBy=who;
+    if(gateState.stage==="preview"){
+      state.previewReviewedBy=who;
+      const target=reviewTarget(state.preview);
+      if(state.modelReview?.provider && state.modelReview.provider!==state.modelReview.builder &&
+         /^[0-9a-f]{64}$/.test(state.modelReview.reportDigest||"")){
+        state.codeReview={...target,kind:"model",passed:true,...state.modelReview};
+      } else state.codeReview=null;
+    }
     if(state.stage==="deploying"){
       if(id)state.eventIds.push(id);
       state.status="deploy_pending";state.releaseApprovedBy=who;
@@ -365,20 +415,46 @@ export async function run(context={}) {
       }
       await comment("Production release explicitly approved. [Deployment workflow](https://github.com/"+repo+
         "/actions). Approved exact commit: "+checkpoint);
-      await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
-        {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
+      const request=workflowRequest("release",checkpoint,number,baseBranch);
+      state.releaseRequest=request;
+      await sendWorkflow({state,request,api,persist,comment});
       return;
     }
     go=true;
-  }else if(cmd?.name==="revise"){
-    if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix blocker, then /resume.");return;}
-    if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
-    state.feedback=cmd.arg;state.revision++;
-    if(state.stage==="release"){state.stage="implementation";state.previewReviewedBy=null;}
-    state.planDigest=null;state.completedBlocks=[];
-    for(const p of ["docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"]){
-      if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+  }else if(cmd?.name==="refresh-research"){
+    if(["awaiting_preview","deploy_pending"].includes(state.status)||state.stage==="deploying"||state.status==="release-ready"){
+      await comment("Cannot refresh evidence during an active preview or production release. Resolve the current workflow first.");return;
     }
+    const files=invalidateFrom(state,"direction",{actor:who,reason:"Requested fresh research and source review"});
+    state.researchNotes=(cmd.arg||state.researchNotes||"").slice(0,1800);
+    for(const p of files)if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+    persist("buildkit: invalidate research and downstream approvals");
+    go=true;
+  }else if(cmd?.name==="revise"){
+    if(!["awaiting_approval","awaiting_code_review","blocked"].includes(state.status) ||
+       state.stage==="deploying"){
+      await comment("There is no revisable output; wait for the active preview or release.");return;
+    }
+    if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
+    const boundary=["direction","architecture"].includes(state.stage)?state.stage:"implementation";
+    if(boundary==="direction")state.researchNotes=cmd.arg;
+    const files=invalidateFrom(state,boundary,{actor:who,reason:cmd.arg});
+    for(const p of files)if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+    state.feedback=cmd.arg;
+    persist("buildkit: revise "+boundary+" and invalidate dependent evidence");
+    go=true;
+  }else if(cmd?.name==="review"){
+    if(state.status!=="awaiting_code_review" || state.stage!=="release"){
+      await comment("There is no pending code/security review; use /status.");return;
+    }
+    try{
+      const target=reviewTarget(state.preview);
+      state.codeReview=acceptHumanReview(state.codeReviewRequest,cmd.arg,target,who,Number(payload.comment?.id));
+    }catch(e){await comment("Review was not accepted: "+errorText(e));return;}
+    state.codeReviewRequest=null;state.status="working";
+    if(id)state.eventIds=[...state.eventIds,id].slice(-100);
+    persist("buildkit: separate code/security review acknowledged");
+    await comment("Code/security review acknowledgment recorded for the reviewed artifact. Evaluating production readiness.");
     go=true;
   }else if(cmd?.name==="attest"){
     if(cmd.arg!=="COMPLIANCE-REVIEWED"||state.stage!=="release"){
@@ -397,18 +473,24 @@ export async function run(context={}) {
     }
     state.lastError=null;
     if(state.stage==="deploying"){
-      if(state.status!=="blocked"){await comment("Release not blocked.");return;}
-      state.status="deploy_pending";
-      persist("buildkit: retrying approved production deployment");
+      if(!state.releaseRequest){await comment("Original approved release request missing. Do not dispatch a different commit.");return;}
       if(context.releaseForTest){
-        state.status="release-ready";
-        persist("buildkit: simulated release retry");
-      }else{
-        await api("POST","/actions/workflows/buildkit-release.yml/dispatches",
-          {ref:baseBranch,inputs:{issue_number:String(number),approved_sha:checkpoint}});
-        await comment("Retrying the separately approved release. Review the Actions run.");}
+        const result=await context.releaseForTest();
+        state.status=result?.deployed?"release-ready":"blocked";
+        persist("buildkit: simulated release retry");return;
+      }
+      await sendWorkflow({state,request:state.releaseRequest,api,persist,comment,retry:true});
       return;
     }
+    if(state.stage==="implementation"&&state.previewRequest){
+      if(context.previewForTest){
+        state.previewRequest=null;go=true;
+      }else{
+        await sendWorkflow({state,request:state.previewRequest,api,persist,comment,retry:true});
+        return;
+      }
+    }
+    if(state.stage==="direction")state.retryResearch=true;
     go=true;
   }else if(labeled||cmd?.name==="start"){await comment("Already initialized. Use /status.");return;}
   if(!go)return;
