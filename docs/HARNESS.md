@@ -1,80 +1,95 @@
-# Buildkit GitHub harness — guided setup and use
+# Build a product through GitHub
 
-Buildkit runs **inside your own GitHub repository**. GitHub Issues collect the idea and approvals; Actions runs the coding agent; a draft pull request stores generated documents and code. No separate Cloudflare controller or local terminal is required for the harness.
+**No local terminal or Cloudflare controller needed.** Describe the idea in an Issue; Buildkit runs a coding agent in Actions and asks you to review outputs. Your product code stays in your own repository.
 
-## A. Once, for the Buildkit maintainer
+## 1. Set up your product repository
 
-Visit **https://github.com/oliveskin/buildkit/settings** → **General** → check **Template repository**. This exposes the **Use this template** button to other people. It is a GitHub repository-administration setting, not a feature controlled by the Buildkit workflow. The source repository must remain public for broad public access.
+1. [Use the template](https://github.com/tinmanlabsl/buildkit/generate). Create a **private** repository in your account. Keep `main` as the default branch for the supplied CI. Do not start customer products in the shared Buildkit source repository.
+2. In **your new repo → Settings → Actions → General**, enable Actions and **Allow GitHub Actions to create and approve pull requests**. The workflow requests only the write scopes it needs. Organization policy may require an administrator to allow them. Settings and secrets are not copied from the source repository.
+3. In **Settings → Secrets and variables → Actions → New repository secret**, add one key:
 
-> Each person using the kit has to complete the configuration in section B on their own repository. The source repository's secret and workflow settings are **not** inherited by a generated repository.
-
-## B. First-time user: create a product repo (no CLI)
-
-**1 — Make the repository.** Open https://github.com/oliveskin/buildkit/generate. Choose a name, set **Private**, and create your repository. This copies the Buildkit harness and documentation, but not anyone's API keys. If the template button has not been enabled, ask the maintainer or copy the repository files instead.
-
-**2 — Allow the workflow to run and open a draft PR.** In your **new repository** navigate to **Settings → Actions → General**.
-
-- Ensure GitHub Actions is enabled for the repository.
-- Under **Workflow permissions**, select **Allow GitHub Actions to create and approve pull requests** and Save. This is needed for the draft PR step.
-- The Buildkit workflow already declares `permissions: contents: write, issues: write, pull-requests: write`. You can keep the repository's default token permissions restricted where GitHub allows the workflow override. If an organization policy prevents write scopes, an owner/admin must permit them; otherwise the Action will fail.
-- You do **not** need to make your product repository public.
-
-**3 — Add one paid-model API key.** In the new repository navigate to **Settings → Secrets and variables → Actions → Repository secrets → New repository secret**.
-
-Choose exactly one for the first run:
-
-| Model choice | New repository secret | Additional repository variable |
+| Provider | Secret | Selection |
 |---|---|---|
-| **Codex** (default) | `OPENAI_API_KEY` | None |
-| **Claude Code** | `ANTHROPIC_API_KEY` | `BUILDKIT_PROVIDER` = `claude` |
+| Codex | `OPENAI_API_KEY` | Automatically selected when present |
+| Claude Code | `ANTHROPIC_API_KEY` | Automatically selected when this is the only key |
 
-A ChatGPT or Claude consumer subscription should **not** be assumed to cover these GitHub-run API calls. API usage may cost money. Do not put secrets into issues, files or public comments. A second independent reviewer can be added later with `BUILDKIT_REVIEW_PROVIDER` and the appropriate second API key.
+With both keys, Codex builds by default. Set repository variable `BUILDKIT_PROVIDER=claude` to change that. For optional separate-model static review, set `BUILDKIT_REVIEW_PROVIDER` to the other provider and supply its key. One key is enough to start.
 
-**4 — Open your first product issue.** Visit **Issues → New issue → Build a product** in your new repository. Enter what you want to build, who needs it, and any hard constraints. Keep the idea short; Buildkit should propose and ask you to review the rest. Submit the issue with its `[Product]` title.
+API usage is separately billed. Do not assume a consumer subscription covers it. Set provider-side budgets/alerts before use. A runner timeout is **not** a hard dollar cap. Claude calls additionally use a 20-turn, approximately $2 per-invocation limit; several invocations can occur in one stage. Codex costs are governed by your provider controls and the invocation timeout.
 
-## C. Example: what the user sees
+## 2. Describe the product
 
-**You enter:** “A simple AI assistant for cafés that answers common questions and manages appointment requests. I'd like it cheap, with a web dashboard.”
+Open **Issues → New issue → Build a product** in your new repo. For a first run, choose something small: “A shared task list for a small team. Add, complete and filter tasks; no billing or external integrations yet.” Keep the `[Product]` title prefix and submit.
 
-1. Buildkit starts a GitHub Actions run, generates `docs/DIRECTION.md`, creates the `buildkit/issue-N` branch and opens a **draft PR**. It comments on the original issue with its scope recommendation and a code such as `/approve a1b2c3d4`.
-2. You follow the PR link in the issue comment to read the actual proposed scope. Comment **`/approve <the-code-from-your-issue>`** on the **issue** (not on the PR). Or comment `/revise Start with email rather than phone.`
-3. After approval, Buildkit generates `docs/PRD.md`, `docs/HLD.md`, and `docs/FEASIBILITY.md`. It asks you for a **second approval**.
-4. After that approval it generates `docs/LLD.md`, chooses 1–3 bounded build blocks, writes code, runs **npm build** and **npm test**, and asks for **preview review**. A failure stops the workflow and reports the blocker.
-5. Final preview approval changes the stage to **ready for manual release review**. You must inspect the draft PR, address remaining issues, merge and configure production deployment separately.
+Only write/maintain/admin collaborators may start paid work or approve it. Buildkit records the original brief, creates `buildkit/issue-N`, and opens one draft pull request for that idea. Commands belong on the **original issue**, not the PR.
 
-**Issue comment commands**
+## 3. Review three outputs
 
-| Command | Meaning |
+| Gate | Produced automatically | Your decision |
+|---|---|---|
+| Direction | `docs/DIRECTION.md`: customer, MMFS, exclusions, assumptions, risks | Approve scope or revise |
+| Architecture | `docs/PRD.md`, `docs/HLD.md`, `docs/FEASIBILITY.md` | Approve requirements/design and acknowledge unresolved risks, or revise |
+| Code review (internal name: `preview`) | `docs/LLD.md`, `docs/BUILD_BLOCKS.json`, 1–3 code blocks, npm command evidence; optional separate-model review | Inspect actual changes and tests, approve or revise |
+
+Each comment includes document excerpts, branch/PR links and a fresh approval code. Copy that issue's code, for example `/approve a1b2c3d4`. Codes bind the current file contents, including binary content and file mode, and cannot be reused for a later revision. Approved direction/architecture files are protected from silent edits during coding.
+
+**The third gate is not a live website.** It is generated code with recorded npm command results. Browser QA, actual customer journeys and live integration testing are separate checks. A successful exit from a generated test script is not proof that its assertions adequately cover the product.
+
+LLD is generated after architecture approval and inspected with the code. There is no separate LLD approval gate in this minimal version. A change to approved product scope must be reviewed upstream, not silently implemented in an unrelated block.
+
+## Commands and recovery
+
+| Comment | Effect |
 |---|---|
-| `/start` | Start on a product issue if it has not started |
-| `/status` | Show stage, pending approval and any blocker |
-| `/approve a1b2c3d4` | Approve the exact current review code (example code is not reusable) |
-| `/revise Describe the change` | Regenerate the current stage with specific feedback |
-| `/resume` | Retry after fixing a blocked stage, such as a missing API key |
+| `/start` | Initialize work if the product issue has not started |
+| `/status` | Show recorded stage, blocks, gate, blocker; retry missing draft PR creation |
+| `/approve CODE` | Accept the exact current review version |
+| `/revise Describe the change` | Regenerate the current gate; creates a new code |
+| `/resume` | Retry blocked work, or recover an interrupted run after it has stopped |
 
-You may use **Actions → Buildkit · guided product build → Run workflow** with an issue number and `start`, `status` or `resume` when recovering; approval must still happen via the issue comment with the correct code.
+Work is checkpointed before a stage, after the implementation plan, and after each successful block. If B02 fails, B01 remains saved. Resume does not rebuild already verified blocks. Failed builds produce a failed Actions run, not a misleading green result. Retries are explicit; there is no automatic self-repair loop.
 
-## D. Troubleshooting
+Use **Actions → Buildkit · guided product build → Run workflow** on the default branch for `start`, `status` or `resume` with the issue number. Approvals still require the issue's current code. Do not edit the issue body to change an active brief: use `/revise` at the relevant gate. Major changes to an already approved upstream stage require a fresh product issue in this version.
 
-| Problem | What to check |
+## 4. Finish release manually
+
+Final approval marks the branch **ready for manual release review**. Buildkit never auto-merges, deploys or provisions paid infrastructure. Review the PR, add real application CI/browser tests, check [the release checklist](RELEASE_CHECKLIST.md), then merge and deploy to your selected target. Cloudflare/Modal examples are wiring demonstrations, not configured production services.
+
+## What is actually automated?
+
+| Capability | Current implementation |
 |---|---|
-| **Use this template** does not appear | Source owner must check **Settings → General → Template repository** once |
-| **Build a product** issue form missing | Confirm `.github/ISSUE_TEMPLATE/product-idea.yml` exists on `main` and Issues are enabled in repository settings |
-| Issue submitted but no comment | **Actions → Buildkit · guided product build**. Ensure Actions enabled, new issue title starts with `[Product]`, and issuer has write/admin permission |
-| Missing `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Add an Actions repository secret to the **product** repo, then comment `/resume` |
-| Pull request not created | **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**; check the Action logs |
-| Action gets 403 writing files/issues | Verify its explicit `permissions` stanza isn't blocked by repository or organization policy |
-| Test/build failed | Open Actions logs, inspect the error, fix configuration or code, then `/resume`; failed tests are not approval |
-| Approval code rejected | Use the **latest** code shown on the issue; changing documents invalidates older approvals |
-| Want to use a different model | Set `BUILDKIT_PROVIDER` to `codex` or `claude` and add the corresponding Actions repository secret |
+| Prompt handoff, scope → PRD → HLD → LLD → bounded code | Yes |
+| Version-bound approvals, checkpoints and restart | Yes |
+| GitHub-hosted execution, one product branch/draft PR | Yes |
+| Separate-provider review | Optional static review of the complete diff, not test execution |
+| Live market/OSS/HF research | Best effort only; no configured research service or guaranteed browsing |
+| Feasibility spikes | Notes and reproducible plans; real API/model experiments are not automatically provisioned/executed |
+| Generated application tests | npm install/build/test in isolated containers; scope/quality of tests still needs human review |
+| Browser previews, UI screenshots, live deployments | Not implemented |
+| Parallel agents, automatic repair loops, unified spend accounting | Not implemented |
+| Marketing/GTM | Not added |
 
-## E. Boundaries and safety
+## Security boundary
 
-- Only collaborators with **write**, **maintain** or **admin** access can start paid work or approve stages.
-- The agent may generate or edit code in the working branch, but the controller prevents edits to its own workflow files and secret paths. Do not use this starter harness to execute untrusted repositories without stronger sandbox isolation.
-- Agent-written code and external content can still be unsafe. Review dependencies, data permissions, auth, credentials, production costs and the final PR before merging.
-- OpenAI/Anthropic model/API charges, GitHub runner usage beyond free allowances, and any subsequent hosting are the user's responsibility.
-- Buildkit **never auto-merges or auto-deploys**. No Cloudflare account setup is needed merely to use the harness; Cloudflare is an optional application-hosting target.
-- A product can be blocked on missing integrations, credentials, npm dependencies, feasibility evidence, browser checks or manual review. A draft PR is not proof of a working app.
+Control code loads from the default branch. File checks reject protected/staged paths, credential values and symlinks. Only the active provider's key enters its CLI process. Controller Git credentials are not passed to agents. Claude tool availability is restricted, not merely pre-approved.
 
-[Back to the quick-start README](../README.md).
+Generated npm scripts run in separate Docker containers with only an application snapshot mounted: no `.git`, agent settings, controller state, runner home, Docker socket or keys. Dependency installation has network access with lifecycle scripts disabled; build and test run without network. The snapshot's lockfile and sanitized command evidence are retained. This requires Docker on the GitHub runner and currently targets Node/npm applications.
+
+**This is not a hardened hostile-code service.** The coding CLI itself still runs on the runner and receives its model key. Use only repositories and collaborators you trust. Stronger agent isolation, pinned tool/image versions and a real-key end-to-end validation remain work before broad untrusted use. Do not attach production secrets to this workflow.
+
+## Troubleshooting
+
+| Symptom | Action |
+|---|---|
+| No template button | Source owner: Settings → General → Template repository. It is enabled on `tinmanlabsl/buildkit`. |
+| No issue form | Check Issues enabled and `.github/ISSUE_TEMPLATE/product-idea.yml` on `main`. |
+| No response | Check Actions enabled, `[Product]` title, collaborator access and the Actions log. |
+| Missing key/provider error | Add the right secret/variable in the product repo; `/resume`. |
+| No draft PR | Enable Actions PR creation, then `/status`; generated files remain on the branch. |
+| 403 writing | Review organization/repository Actions policy and workflow scopes. |
+| Code rejected | Use the newest code. Older v1 gates created before the audit need `/revise` to refresh. |
+| Build/test/network failure | Inspect Actions and `docs/evidence/`; fix the underlying dependency/test/configuration, then `/resume`. External network tests need a separately approved workflow. |
+| Need a live preview | Deploy manually after security/release review; this harness does not publish a URL. |
+
+[README](../README.md) · [Audit and outstanding work](AUDIT.md) · [Manual playbook](../START-HERE.md)

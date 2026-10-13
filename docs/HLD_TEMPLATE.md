@@ -31,3 +31,6 @@ Browser → Cloudflare Worker → (D1/R2 only if needed) → Model/provider API 
 
 ## Risks and feasibility spikes before LLD
 [Specific hypothesis, minimal verification, GO/NO-GO threshold]
+
+## Feasibility decision
+[For each critical integration/model, link an executed result or write UNVERIFIED. Separate demonstrated capability from a proposed spike. List which unverified risks the reviewer is accepting.]
