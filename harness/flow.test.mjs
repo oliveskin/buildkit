@@ -87,7 +87,8 @@ function fixture(){
       executeSpikes:async()=>({schema:1,decision:"GO",results:[{id:"RISK-01",critical:true,outcome:"PASS",
         evidence:"Observed stub response: synthetic test only"}],blockers:[]}),
       previewForTest:async()=>({schema:1,previewUrl:"https://demo-bk-app.user.workers.dev",
-        httpStatus:200,screenshot:true,pageErrors:0,behaviouralTestsPassed:true}),
+        httpStatus:200,screenshot:true,pageErrors:0,behaviouralTestsPassed:true,
+        artifact:{id:"1001",runId:"1002",payloadDigest:"a".repeat(64)}}),
       releaseForTest:async()=>({deployed:true})});}
     finally{
       const state=spawnSync("git",["--git-dir="+remote,"show","buildkit/issue-1:.buildkit/state.json"],{encoding:"utf8"});
@@ -99,12 +100,16 @@ function fixture(){
   return f;
 }
 
-test("complete three-gate flow keeps all writes on product branch",async()=>{
+test("complete approval flow separates real user preview from code/security review",async()=>{
   const f=fixture();try{
     await f.invoke();assert.equal(f.state.gate.stage,"direction");assert.ok(f.comments.some(c=>c.includes("Decision: keep")));
     await f.approve();assert.equal(f.state.gate.stage,"architecture");
     await f.approve();assert.equal(f.state.gate.stage,"preview");assert.equal(f.state.completedBlocks.length,2);
-    await f.approve();assert.equal(f.state.gate.stage,"release");
+    await f.approve();assert.equal(f.state.status,"awaiting_code_review");
+    assert.equal(f.state.codeReview,null,"UX approval alone must not become security approval");
+    await f.invoke("/review "+f.state.codeReviewRequest.code);
+    assert.equal(f.state.gate.stage,"release");
+    assert.equal(f.state.codeReview.kind,"human");
     await f.approve();assert.equal(f.state.status,"release-ready");
     assert.equal(f.state.history.filter(x=>x.event==="approved").length,4);
   }finally{f.cleanup();}
