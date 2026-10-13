@@ -2,6 +2,27 @@
 
 **Buildkit is free, MIT-licensed software.** GitHub Issues provide the interface, Actions runs approved tasks, and a private product repository holds evidence, PRD/HLD/LLD and code. The HLD—not Buildkit—chooses the stack. Cloudflare is an optional adapter for suitable products, not a product requirement.
 
+## Prerequisites and execution modes
+
+### Recommended: GitHub-hosted, browser-only
+
+**No local software installation is required.** You can use Buildkit entirely through GitHub Issues and Pull Requests. The GitHub-hosted Actions runners supply Git and Docker, set up Node.js 22, fetch the isolated Node/Python/Rust build images as required, and install the selected Codex/Claude agent CLI, Wrangler, Gitleaks and Playwright when those stages need them. You do not have to run a terminal or maintain a Docker daemon on your laptop.
+
+Before starting, have a GitHub account that can create a **private repository**, enable **GitHub Actions**, and permit Actions to create PRs. Create an OpenAI or Anthropic **API key** and store it in that repository's **Actions secrets**. The key is billed by the model provider; a consumer chat subscription is not a substitute for API billing. Review the provider's usage controls and your GitHub Actions quota. Avoid inserting tokens into Issues or committed configuration.
+
+Cloudflare is **not** an installation prerequisite. If the approved HLD selects Cloudflare Workers, you will need an authorized Cloudflare account and the stage-specific credentials described below before Buildkit can provision resources, preview, or deploy. Other selected platforms have their own account/adapter requirements. You may optionally configure a market-search endpoint to improve research evidence; without it, relevant gaps must remain `UNVERIFIED`.
+
+### Advanced: local or self-hosted execution
+
+This is **not required for normal users** and is not a promise of one-command local product deployment. For local development of the harness or self-hosted runners, the operator must supply:
+
+- Git, Node.js **22** with npm, and a shell capable of running the harness commands.
+- A working Docker Engine / Docker-compatible CLI and daemon for isolated builds and credential scanning, with permission to pull images.
+- The chosen model CLI or working access for the harness to install it, plus a provider API key and appropriate secret management.
+- Any additional host tooling required by the selected runtime, network permissions and self-hosted runner configuration.
+
+The GitHub Issue/Actions workflow remains the supported default. The harness's GitHub API calls, event payload, approvals and separate cloud credentials do not become optional simply because you run the code on your own machine.
+
 ## Start a product
 
 1. [Use the Buildkit template](https://github.com/tinmanlabsl/buildkit/generate) to create a **private repository**. No Buildkit server is required.
