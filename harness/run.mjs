@@ -240,7 +240,7 @@ export async function run(context={}) {
       for(const b of blocks){
         if(state.completedBlocks.some(x=>x.id===b.id))continue;
         const specs=digest(entries(Object.values(STAGE_FILES).flat()));
-        agent(provider,instructions()+"\nImplement only "+JSON.stringify(b)+
+        agent(provider,instructions()+"\nCloudflare target Worker (exact name, no substitutions): "+(env.BUILDKIT_WORKER_NAME||"NOT CONFIGURED: require the user to set BUILDKIT_WORKER_NAME")+". Do not deploy; produce wrangler.json name matching this value when configured.\nImplement only "+JSON.stringify(b)+
           ". Build a real Cloudflare Workers compatible web app. Generate wrangler.json in strict JSON "+
           "with approved worker name, previews.vars.ENVIRONMENT='preview', and separate preview "+
           "resource bindings. Generate tests/e2e.spec.mjs with at least two actual user journeys "+
@@ -266,7 +266,6 @@ export async function run(context={}) {
       state.complianceProfileDigest=digest(inspectFile(root,"docs/security/PROFILE.json"));
       state.security={secretScan:{passed:true,method:"controller content/path scan"},
         dependencyAudit:{passed:true,method:"isolated npm audit --omit=dev --audit-level=high"}};
-      if(repo==="test/product")console.log("BUILDKIT_DEBUG_PREVIEW_HOOK",typeof context.previewForTest,context.previewForTest===undefined?"ABSENT":"PRESENT");
       if(context.previewForTest){
         const demo=await context.previewForTest();
         verifyBrowserResults(demo,demo.previewUrl);
