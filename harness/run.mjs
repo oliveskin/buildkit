@@ -346,7 +346,7 @@ export async function run(context={}) {
   const access=await api("GET","/collaborators/"+encodeURIComponent(who)+"/permission",undefined,true);
   if(!mayOperate(access?.permission))return;
   const labeled=event==="issues"&&((payload.action==="labeled"&&payload.label?.name===PRODUCT_LABEL)||(payload.action==="opened"&&issue.title.startsWith("[Product]")));
-  const cmd=event==="workflow_dispatch"?parseWorkflowCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
+  let cmd=event==="workflow_dispatch"?parseWorkflowCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
     event==="issue_comment"&&payload.action==="created"?parseWorkflowCommand(payload.comment?.body):null;
   if(!labeled&&!cmd)return;
   if(event==="workflow_dispatch"&&! ["start","status","resume"].includes(cmd?.name))return;
@@ -365,6 +365,11 @@ export async function run(context={}) {
   state.approvedDocs||={};state.baseSha||=baseSha;state.brief||=String(issue.body||issue.title).slice(0,10000);
   const id=event==="issue_comment"?"comment:"+payload.comment.id:null;
   if(id&&state.eventIds.includes(id))return;
+  if(cmd?.name==="approve"&&state.gate?.stage==="direction"&&
+     state.researchCacheFingerprint!==researchCacheKey(state,env)){
+    // New search access invalidates the displayed direction; refresh before approving it.
+    cmd={name:"refresh-research",arg:state.researchNotes||""};
+  }
   if(cmd?.name==="status"){
     await pr();
     await comment("Buildkit: **"+state.status+"** / **"+state.stage+"**. Completed blocks: "+(state.completedBlocks.map(x=>x.id).join(", ")||"none")+
