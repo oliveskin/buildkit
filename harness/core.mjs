@@ -44,7 +44,7 @@ export function permittedChange(path) {
   const forbidden = [".github", "harness", ".agents", ".claude", ".codex", ".buildkit", "node_modules", ".git", "scripts"];
   if (forbidden.some(x=>path===x || path.startsWith(x+"/"))) return false;
   if (["AGENTS.md","CLAUDE.md","PROMPTS.md","README.md","START-HERE.md",".gitignore"].includes(path)) return false;
-  if (/(^|\/)\.(env(\.|$)|dev\.vars|npmrc$|yarnrc|mcp\.json$)/.test(path) || /(^|\/)(id_rsa|id_ed25519|credentials\.json)(\.|$)/.test(path)) return false;
+  if ((/(^|\/)\.(env(\.|$)|dev\.vars|npmrc$|yarnrc|mcp\.json$)/.test(path) && !/(^|\/)\.(env|dev\.vars)\.example$/.test(path)) || /(^|\/)(id_rsa|id_ed25519|credentials\.json)(\.|$)/.test(path)) return false;
   return true;
 }
 export function selectProvider(env) {

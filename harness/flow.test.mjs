@@ -82,7 +82,10 @@ function fixture(){
         gaps:["Market demand UNVERIFIED"],sources:[{id:"E-001",category:"oss",title:"Known open source repo",
           excerpt:"A public task tracker repo",url:"https://github.com/sample/tool",retrievedAt:"2026-10-13"}]}),
       executeSpikes:async()=>({schema:1,decision:"GO",results:[{id:"RISK-01",critical:true,outcome:"PASS",
-        evidence:"Observed stub response: synthetic test only"}],blockers:[]})});}
+        evidence:"Observed stub response: synthetic test only"}],blockers:[]}),
+      previewForTest:async()=>({schema:1,previewUrl:"https://demo-bk-app.user.workers.dev",
+        httpStatus:200,screenshot:true,pageErrors:0,behaviouralTestsPassed:true}),
+      releaseForTest:async()=>({deployed:true})});}
     finally{
       const state=spawnSync("git",["--git-dir="+remote,"show","buildkit/issue-1:.buildkit/state.json"],{encoding:"utf8"});
       f.state=state.status===0?JSON.parse(state.stdout):null;
@@ -98,8 +101,9 @@ test("complete three-gate flow keeps all writes on product branch",async()=>{
     await f.invoke();assert.equal(f.state.gate.stage,"direction");assert.ok(f.comments.some(c=>c.includes("Decision: keep")));
     await f.approve();assert.equal(f.state.gate.stage,"architecture");
     await f.approve();assert.equal(f.state.gate.stage,"preview");assert.equal(f.state.completedBlocks.length,2);
+    await f.approve();assert.equal(f.state.gate.stage,"release");
     await f.approve();assert.equal(f.state.status,"release-ready");
-    assert.equal(f.state.history.filter(x=>x.event==="approved").length,3);
+    assert.equal(f.state.history.filter(x=>x.event==="approved").length,4);
   }finally{f.cleanup();}
 });
 test("failed block resumes from verified checkpoint rather than repeating B01",async()=>{
