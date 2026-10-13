@@ -170,10 +170,16 @@ export async function run(context={}) {
     const provider=selectProvider(env);agentConfig(provider,env);
     approved();
     if(state.stage==="direction"){
-      if(!read("docs/research/EVIDENCE.json")){
+      let cachedResearch=null;
+      try{if(read("docs/research/EVIDENCE.json"))cachedResearch=JSON.parse(read("docs/research/EVIDENCE.json"));}catch{}
+      if(shouldRefreshResearch(state,env,cachedResearch,{retry:!!state.retryResearch})){
+        // Never reuse incomplete findings after the user provides more sources or search access.
+        for(const name of ["docs/research/EVIDENCE.json","docs/research/SOURCES.md","docs/DIRECTION.md"])
+          if(fs.existsSync(path.join(root,name)))fs.unlinkSync(path.join(root,name));
         const obtain=context.collectResearch||collectResearch;
-        const sourceLinks=(state.brief.match(/https:\/\/[^\s)\]<>"]+/g)||[]).slice(0,5);
-        const evidence=await obtain(state.brief,{request:context.researchFetch||fetch,
+        const researchBrief=state.brief+"\nAdditional research notes: "+(state.researchNotes||"");
+        const sourceLinks=(researchBrief.match(/https:\/\/[^\s)\]<>"]+/g)||[]).slice(0,5);
+        const evidence=await obtain(researchBrief,{request:context.researchFetch||fetch,
           githubToken:token,searchEndpoint:env.BUILDKIT_SEARCH_ENDPOINT||"",
           searchKey:env.BUILDKIT_SEARCH_KEY||"",userLinks:sourceLinks});
         write("docs/research/EVIDENCE.json",JSON.stringify(evidence,null,2)+"\n");
@@ -181,6 +187,8 @@ export async function run(context={}) {
           evidence.sources.map(x=>"- ["+x.id+"] "+x.category+" — "+x.title+": "+x.url+
           "\n  - Checked: "+x.retrievedAt+"; excerpt: "+x.excerpt).join("\n")+"\n\n"+
           "Gaps: "+(evidence.gaps||[]).join("; ")+"\n");
+        state.researchCacheKey=researchCacheKey(state,env);
+        state.retryResearch=false;
         persist("buildkit: retrieved research evidence");
       }
       const evidence=JSON.parse(read("docs/research/EVIDENCE.json"));
@@ -318,8 +326,8 @@ export async function run(context={}) {
   const access=await api("GET","/collaborators/"+encodeURIComponent(who)+"/permission",undefined,true);
   if(!mayOperate(access?.permission))return;
   const labeled=event==="issues"&&((payload.action==="labeled"&&payload.label?.name===PRODUCT_LABEL)||(payload.action==="opened"&&issue.title.startsWith("[Product]")));
-  const cmd=event==="workflow_dispatch"?parseCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
-    event==="issue_comment"&&payload.action==="created"?parseCommand(payload.comment?.body):null;
+  const cmd=event==="workflow_dispatch"?parseWorkflowCommand("/"+(env.BUILDKIT_DISPATCH_COMMAND||"status")):
+    event==="issue_comment"&&payload.action==="created"?parseWorkflowCommand(payload.comment?.body):null;
   if(!labeled&&!cmd)return;
   if(event==="workflow_dispatch"&&! ["start","status","resume"].includes(cmd?.name))return;
   const metadata=await api("GET","");baseBranch=metadata.default_branch;
