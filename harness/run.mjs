@@ -11,6 +11,7 @@ import { executeSpikes, verifySpikePlan } from "./feasibility.mjs";
 import { assertClean } from "./security-gate.mjs";
 import { classifyProduct, assessRelease } from "./compliance.mjs";
 import { verifyBrowserResults } from "./cloudflare.mjs";
+import { researchCacheKey, shouldRefreshResearch, invalidateFrom } from "./research-control.mjs";
 
 // Dependencies are injectable only through this module API for offline regression tests.
 export async function run(context={}) {
