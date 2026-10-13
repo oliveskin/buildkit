@@ -133,29 +133,36 @@ export async function run(context={}) {
     for(const p of outputs)if(read(p).length<80)throw Error("Missing generated document: "+p);
     if(digest(entries(locks))!==before)throw Error("Agent modified an earlier specification.");
   }
-  function testApp(block){
-    const pkg=JSON.parse(read("package.json")||"{}");
-    if(!pkg.scripts?.build||!pkg.scripts?.test)throw Error("Real npm build/test scripts are required.");
+  function testApp(block,execution){
+    const adapter=execution.build.adapter;
+    if(adapter==="node-npm"){
+      const pkg=JSON.parse(read("package.json")||"{}");
+      if(!pkg.scripts?.build||!pkg.scripts?.test)
+        throw Error("Node/npm requires genuine build and test scripts.");
+    }
     const snapshot=makeTestSnapshot(root,allFiles());
     const log=[];
-    try {
-      command("docker",["image","inspect","node:22-bookworm-slim"]);
-    } catch {
-      command("docker",["pull","node:22-bookworm-slim"],{timeout:180000});
-    }
-    try {
-      const install=read("package-lock.json")?"ci":"install";
-      for(const [args,network] of [[["npm",install,"--ignore-scripts","--no-audit","--no-fund"],true],[["npm","audit","--omit=dev","--audit-level=high"],true],[["npm","run","build"],false],[["npm","test"],false]]){
-        const output=command("docker",containerArgs(snapshot,args,network),{timeout:180000});
-        log.push("$ "+args.join(" ")+"\n"+output+"\nExit: 0");
+    try{
+      const recipe=buildRecipe(adapter,{
+        hasNodeLock:!!read("package-lock.json"),
+        hasPythonRequirements:!!read("requirements.txt"),
+        hasCargoLock:!!read("Cargo.lock")
+      });
+      try{command("docker",["image","inspect",recipe.image]);}
+      catch{command("docker",["pull",recipe.image],{timeout:240000});}
+      for(const item of recipe.steps){
+        const output=command("docker",containerArgs(snapshot,item.args,item.network,recipe.image),
+          {timeout:240000});
+        log.push("$ "+item.args.join(" ")+"\n"+output+"\nExit: 0");
       }
-      // Keep the lockfile actually used for verification; no other test-written code is imported.
-      const lock=path.join(snapshot,"package-lock.json");
-      if(fs.existsSync(lock)) {inspectFile(snapshot,"package-lock.json");write("package-lock.json",fs.readFileSync(lock,"utf8"));}
+      if(adapter==="node-npm"){
+        const lock=path.join(snapshot,"package-lock.json");
+        if(fs.existsSync(lock)){inspectFile(snapshot,"package-lock.json");write("package-lock.json",fs.readFileSync(lock,"utf8"));}
+      }
       const evidence="docs/evidence/"+block.id+".txt";
-      write(evidence,redact(log.join("\n\n"),secrets)+"\n");guard();approved();
-      return evidence;
-    } finally {fs.rmSync(snapshot,{recursive:true,force:true});}
+      write(evidence,redact(log.join("\n\n"),secrets)+"\n");
+      guard();approved();return evidence;
+    } finally{fs.rmSync(snapshot,{recursive:true,force:true});}
   }
   async function gate(stage,summary){
     guard();approved();state.status="awaiting_approval";state.lastError=null;
