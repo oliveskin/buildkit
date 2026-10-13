@@ -272,6 +272,7 @@ export async function run(context={}) {
         const report=agent(reviewer,instructions()+"\nReview this COMPLETE diff against PRD/HLD/LLD for security, scope and regressions. Inspect files as needed. Do not edit or execute. Begin PASS or FAIL.\n"+diff,true);
         write("docs/reviews/INDEPENDENT.md",report+"\n");
         if(!/^PASS\b/i.test(report)){persist("buildkit: independent review findings");throw Error("Independent reviewer did not PASS. See docs/reviews/INDEPENDENT.md, fix the findings, then /resume.");}
+        state.modelReview={provider:reviewer,builder:provider,reportDigest:digest(read("docs/reviews/INDEPENDENT.md"))};
       }
       const profile=classifyProduct(state.brief,read("docs/PRD.md"),read("docs/HLD.md"));
       write("docs/security/PROFILE.json",JSON.stringify(profile,null,2)+"\n");
@@ -299,9 +300,21 @@ export async function run(context={}) {
     }else if(state.stage==="release"){
       const profile=JSON.parse(read("docs/security/PROFILE.json"));
       const preview=JSON.parse(read("docs/evidence/PREVIEW.json"));
+      const target=reviewTarget(state.preview);
+      if(!codeReviewPassed(state.codeReview,target)){
+        if(!state.codeReviewRequest || state.codeReviewRequest.sourceSha!==target.sourceSha ||
+           state.codeReviewRequest.payloadDigest!==target.payloadDigest)
+          state.codeReviewRequest=makeReviewRequest(target);
+        state.status="awaiting_code_review";
+        persist("buildkit: request separate code/security review");
+        await comment("### Code and security review required\n\nProduct-preview approval does not verify source security. "+
+          "Inspect the full PR diff, dependency audit, authorization, secrets and verified artifact "+
+          target.payloadDigest+". After an actual review, acknowledge with **/review "+
+          state.codeReviewRequest.code+"** on this issue. This is not a compliance certification.");
+        return;
+      }
       const report=assessRelease({profile,secretScan:state.security?.secretScan,
-        dependencyAudit:state.security?.dependencyAudit,preview,
-        independentReview:{passed:!!state.previewReviewedBy},
+        dependencyAudit:state.security?.dependencyAudit,preview,codeReview:state.codeReview,
         externalAttestation:{approved:!!state.complianceReview?.confirmed &&
           state.complianceReview.profileDigest===state.complianceProfileDigest}});
       write("docs/security/RELEASE_REVIEW.json",JSON.stringify({...report,
