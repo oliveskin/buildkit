@@ -1,6 +1,6 @@
 // Durable, retryable workflow requests. The source/approval SHA never changes on retry.
 export function workflowRequest(kind,sha,issue,ref){
-  if(!['preview','release'].includes(kind)||!/^[0-9a-f]{40}$/.test(sha||'')||!Number.isSafeInteger(issue)||issue<1||!ref)
+  if(!['preview','release','provision'].includes(kind)||!/^[0-9a-f]{40}$/.test(sha||'')||!Number.isSafeInteger(issue)||issue<1||!ref)
     throw Error('Invalid workflow request.');
   return {kind,sha,issue,ref,workflow:'buildkit-'+kind+'.yml',
     title:'Buildkit '+kind+' #'+issue+' @'+sha,createdAt:new Date().toISOString()};
@@ -18,22 +18,30 @@ export async function sendWorkflow({state,request,api,persist,comment,retry=fals
       return false;
     }
     if(previous?.conclusion==='success'){
-      await comment('The existing workflow completed successfully: '+previous.html_url+'. Check its finalization record; a successful run will not be dispatched twice.');
-      return false;
+      // A process can terminate after external success and before saving the callback.
+      // Do not assume GitHub success means Buildkit state was finalized.
+      const completed=new Date(previous.updated_at||previous.run_started_at||0).getTime();
+      if(!Number.isFinite(completed)||Date.now()-completed<120000){
+        await comment('Workflow finished; waiting for its finalization: '+previous.html_url+'. Use /resume if state stays pending.');
+        return false;
+      }
+      await comment('The prior workflow finished without a durable Buildkit result. Replaying only the ORIGINAL approved request idempotently.');
     }
-    if(!previous&&state.dispatch?.attemptAt&&Date.now()-Date.parse(state.dispatch.attemptAt)<60000){
+    if(!previous&&state.dispatch?.attemptAt&&Date.now()-Date.parse(state.dispatch.attemptAt)<120000){
       await comment('The last dispatch may still be appearing in Actions. No duplicate was sent. Use /resume after the dispatch visibility window.');
       return false;
     }
   }
-  state.status=request.kind==='release'?'deploy_pending':'awaiting_preview';
+  state.status=request.kind==='release'?'deploy_pending':request.kind==='provision'?'awaiting_provision':'awaiting_preview';
   state.lastError=null;
   state.dispatch={...request,status:'sending',attemptAt:new Date().toISOString(),attempts:(state.dispatch?.attempts||0)+1};
   if(request.kind==='release')state.releaseRequest=request;
+  else if(request.kind==='provision')state.provisionRequest=request;
   else state.previewRequest=request;
   // Persist the outbox before the network call. Crashes cannot lose the request.
   persist('buildkit: dispatch '+request.kind+' request');
-  const inputs={issue_number:String(request.issue),[request.kind==='release'?'approved_sha':'candidate_sha']:request.sha};
+  const field=request.kind==='release'?'approved_sha':request.kind==='provision'?'plan_sha':'candidate_sha';
+  const inputs={issue_number:String(request.issue),[field]:request.sha};
   try{
     await api('POST','/actions/workflows/'+request.workflow+'/dispatches',{ref:request.ref,inputs});
     await comment('Dispatched '+request.kind+' for the original approved version `'+request.sha+'`. Use /status to inspect it.');

@@ -7,6 +7,9 @@ import {assessRelease} from "./compliance.mjs";
 import {digest,STAGE_FILES} from "./core.mjs";
 import {inspectFile} from "./security.mjs";
 import {assertClean,trackedFiles} from "./security-gate.mjs";
+import {validateExecutionPlan,validateInfrastructurePlan} from "./execution-plan.mjs";
+import {verifyProvisionedBindings} from "./binding-policy.mjs";
+import {createHash} from "node:crypto";
 const env=process.env,repo=env.GITHUB_REPOSITORY,token=env.GITHUB_TOKEN;
 const issue=Number(env.BUILDKIT_ISSUE_NUMBER),sha=env.BUILDKIT_APPROVED_SHA;
 const app=path.resolve(env.BUILDKIT_APP_PATH||"app");
@@ -42,8 +45,21 @@ function preflight(){
      artifact.sourceSha!==source ||
      state.preview?.artifact?.payloadDigest!==artifact.payloadDigest)
     throw Error("Version-bound browser-reviewed deployment artifact is missing or changed.");
+  const execution=file("docs/EXECUTION_PLAN.json"),infra=file("docs/INFRA_PLAN.json");
+  validateExecutionPlan(execution);validateInfrastructurePlan(infra,execution);
+  if(execution.deploy.adapter!=="cloudflare-workers")
+    throw Error("Approved release adapter is not Cloudflare. Do not substitute another provider.");
+  const worker=execution.deploy.workerName;
+  if(env.BUILDKIT_WORKER_NAME&&env.BUILDKIT_WORKER_NAME!==worker)
+    throw Error("Worker setting differs from approved architecture.");
   const config=loadWorkerConfig(app);
-  checkPreviewIsolation(config,env.BUILDKIT_WORKER_NAME||"");
+  checkPreviewIsolation(config,worker);
+  const ledger=fs.existsSync(path.join(app,"docs/infrastructure/PROVISIONED.json"))?
+    file("docs/infrastructure/PROVISIONED.json"):null;
+  verifyProvisionedBindings({execution,infrastructure:infra,ledger,wrangler:config});
+  if(infra.resources.length&&ledger.accountFingerprint!==
+     createHash("sha256").update(env.CLOUDFLARE_ACCOUNT_ID||"").digest("hex"))
+    throw Error("Provisioned resources belong to a different Cloudflare account.");
   if(file("spikes/results.json").decision!=="GO")throw Error("Feasibility proofs absent.");
   assertClean(app,trackedFiles(app));
   const profile=file("docs/security/PROFILE.json");
@@ -55,7 +71,7 @@ function preflight(){
   if(env.GITHUB_OUTPUT){
     const outputs={artifact_id:artifact.id,artifact_run:artifact.runId,
       payload_digest:artifact.payloadDigest,source_sha:source,
-      base_branch:state.baseBranch,base_sha:state.baseSha};
+      base_branch:state.baseBranch,base_sha:state.baseSha,worker_name:worker};
     for(const [k,value] of Object.entries(outputs)){
       if(!/^[a-z0-9_-]+$/.test(k) || /[\r\n]/.test(String(value||"")))
         throw Error("Invalid release workflow output");

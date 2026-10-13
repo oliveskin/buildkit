@@ -25,7 +25,8 @@ test("approval binds exact outputs and gate",()=>{
 test("blocks must be ordered, finite, and testable",()=>{
   const good={id:"B01",goal:"Complete the main user workflow",acceptance:["Behavioural test passes"]};
   assert.equal(validateBlocks({blocks:[good]}).length,1);
-  for(const blocks of [[],[null],[{...good,id:"B99"}],[{...good,acceptance:[]}],Array(4).fill(good)])assert.throws(()=>validateBlocks({blocks}));
+  assert.equal(validateBlocks({blocks:[{...good,id:"B99"}]}).length,1);
+  for(const blocks of [[],[null],[{...good,id:"B01",acceptance:[]}],Array(4).fill(good)])assert.throws(()=>validateBlocks({blocks}));
 });
 test("file policies reject controls, credentials and path traversal",()=>{
   for(const p of ["../foo",".github/workflows/a.yml",".git",".git/config",".codex/config.toml",".mcp.json",".env.production","nested/.npmrc","nested/id_ed25519","harness/a.mjs","scripts/a.sh",".buildkit/state.json","README.md",".gitignore"])

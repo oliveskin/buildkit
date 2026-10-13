@@ -21,7 +21,7 @@ function fixture(){
   const f={dir,remote,comments:[],calls:[],permission:"write",failBlock:null,mutateSpec:false,mutateStage:false,
     deniedPR:false,reviewFail:false,hasPR:false,state:null,containerCalls:0,realContainers:process.env.BUILDKIT_TEST_REAL_DOCKER==="1",
     usePreviewHook:true,useReleaseHook:true,failPreviewDispatch:false,failReleaseDispatch:false,
-    previewAttempts:[],releaseAttempts:[],workflowRuns:[]};
+    previewAttempts:[],releaseAttempts:[],workflowRuns:[],blockCount:2,autoContinuations:[]};
   f.cleanup=()=>fs.rmSync(dir,{recursive:true,force:true});
   f.invoke=async (body=null,overrides={})=>{
     const work=path.join(dir,"run-"+(++count));sh(["clone",remote,work],dir);
@@ -46,6 +46,9 @@ function fixture(){
         f.previewAttempts.push(JSON.parse(options.body));
         if(f.failPreviewDispatch)return new Response("{}",{status:503});
         return new Response(null,{status:204});
+      }else if(suffix==="/actions/workflows/buildkit.yml/dispatches" && options.method==="POST"){
+        f.autoContinuations.push(JSON.parse(options.body));
+        return new Response(null,{status:204});
       }else if(suffix==="/actions/workflows/buildkit-release.yml/dispatches" && options.method==="POST"){
         f.releaseAttempts.push(JSON.parse(options.body));
         if(f.failReleaseDispatch)return new Response("{}",{status:503});
@@ -63,12 +66,30 @@ function fixture(){
         assert.equal(options.env.GITHUB_TOKEN,undefined);
         f.calls.push(options.input);
         if(options.input.includes("COMPLETE diff"))return {status:0,stdout:f.reviewFail?"FAIL\nAn example defect needs correction.":"PASS\nReviewed the complete diff."};
-        const outputs=options.input.match(/Only write: (.+)\. Start Markdown/);
+        const outputs=options.input.match(/Only write: (.+)\. (?:Start Markdown|Output strict JSON)/);
         if(outputs){
           for(const p of outputs[1].split(", ")){
             const text=p.endsWith("spikes/plan.json")?JSON.stringify({schema:1,probes:[{id:"RISK-01",risk:"Verify the runtime endpoint responds as expected",kind:"http_contract",url:"https://developers.cloudflare.com/workers/",method:"GET",critical:true,assertion:"Contract response matches expected Cloudflare marker",
     expectedText:"Cloudflare"}]}):
-              p.endsWith(".json")?JSON.stringify({blocks:[1,2].map(i=>({id:"B0"+i,goal:"Complete a genuinely useful user workflow",acceptance:["Behavioural test proves the outcome"]}))}):
+              p.endsWith("docs/EXECUTION_PLAN.json")?JSON.stringify({
+                schema:1,productKind:"web task-tracking application",
+                rationale:"This fixture deliberately selects Cloudflare Workers because the sample has a small Node frontend and API.",
+                requirements:["FR-01"],build:{adapter:"node-npm",language:"JavaScript"},
+                preview:{adapter:"cloudflare-workers"},
+                deploy:{adapter:"cloudflare-workers",provider:"Cloudflare",workerName:"bk-fixture-app"},
+                risks:[],tradeoffs:["No separate GPU service required"]
+              }):
+              p.endsWith("docs/INFRA_PLAN.json")?JSON.stringify({
+                schema:1,provider:"none",summary:"No external databases, custom domains or paid resources for this example fixture.",
+                resources:[],domain:null,
+                cost:{estimatedMonthlyUsd:0,pricingSource:"No additional external storage provisioned in the fixture.",
+                  assumptions:["Synthetic test only; no actual hosting costs estimated"],canExceedEstimate:true},
+                permissions:[],operations:[]
+              }):
+              p.endsWith(".json")?JSON.stringify({blocks:Array.from({length:f.blockCount||2},(_,i)=>({
+                id:"B"+String(i+1).padStart(2,"0"),goal:"Complete useful workflow "+i+" with observed user effects",
+                requirements:["FR-01"],dependsOn:i?["B"+String(i).padStart(2,"0")]:[],
+                acceptance:["Behavioural test proves the outcome"]}))}):
               "# "+p+"\n\nDecision: keep a small complete workflow. Evidence: [E-001]. Market UNVERIFIED. Review required before spending or deployment.\n";
             fs.mkdirSync(path.dirname(path.join(work,p)),{recursive:true});fs.writeFileSync(path.join(work,p),text);
           }
@@ -269,16 +290,26 @@ test("new search access before scope approval automatically refreshes displayed 
   }finally{f.cleanup();}
 });
 
-test("missing Cloudflare Worker identity blocks implementation and resumes after configuration",async()=>{
+test("Cloudflare Worker identity comes from HLD, not a mandatory repository-wide setting",async()=>{
   const f=fixture();try{
     await f.invoke();await f.approve();
-    await assert.rejects(
-      f.invoke("/approve "+f.state.gate.code,{BUILDKIT_WORKER_NAME:""}),
-      /BUILDKIT_WORKER_NAME/);
-    assert.equal(f.state.status,"blocked");
-    assert.equal(f.state.stage,"implementation");
-    assert.equal(f.state.completedBlocks.length,0);
-    await f.invoke("/resume",{BUILDKIT_WORKER_NAME:"bk-fixture-app"});
+    await f.invoke("/approve "+f.state.gate.code,{BUILDKIT_WORKER_NAME:""});
     assert.equal(f.state.gate.stage,"preview");
+    assert.equal(f.state.completedBlocks.length,2);
+  }finally{f.cleanup();}
+});
+test("approved product can contain seven blocks across four checkpointed runs",async()=>{
+  const f=fixture();f.blockCount=7;try{
+    await f.invoke();await f.approve();
+    await f.approve();
+    assert.equal(f.state.status,"blocked");
+    assert.equal(f.state.completedBlocks.length,2);
+    assert.equal(f.autoContinuations.length,1);
+    await f.invoke("/resume");assert.equal(f.state.completedBlocks.length,4);
+    await f.invoke("/resume");assert.equal(f.state.completedBlocks.length,6);
+    await f.invoke("/resume");assert.equal(f.state.completedBlocks.length,7);
+    assert.equal(f.state.gate.stage,"preview");
+    assert.equal(f.autoContinuations.length,3);
+    assert.equal(new Set(f.state.completedBlocks.map(x=>x.id)).size,7);
   }finally{f.cleanup();}
 });

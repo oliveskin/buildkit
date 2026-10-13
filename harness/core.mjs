@@ -3,11 +3,12 @@ import { createHash, randomBytes } from "node:crypto";
 export const PRODUCT_LABEL = "buildkit:idea";
 export const STAGE_FILES = Object.freeze({
   direction: ["docs/DIRECTION.md", "docs/research/EVIDENCE.json"],
-  architecture: ["docs/PRD.md", "docs/HLD.md", "docs/FEASIBILITY.md","spikes/plan.json","spikes/results.json"],
+  architecture: ["docs/PRD.md", "docs/HLD.md", "docs/FEASIBILITY.md","spikes/plan.json","spikes/results.json","docs/EXECUTION_PLAN.json","docs/INFRA_PLAN.json"],
   release: ["docs/security/PROFILE.json","docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"],
   implementation: ["docs/LLD.md", "docs/BUILD_BLOCKS.json"],
+  infrastructure: ["docs/INFRA_PLAN.json"],
 });
-export const GATE_NEXT = Object.freeze({direction:"architecture",architecture:"implementation",preview:"release",release:"deploying"});
+export const GATE_NEXT = Object.freeze({direction:"architecture",architecture:"infrastructure",infrastructure:"provisioning",preview:"release",release:"deploying"});
 export const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export function parseCommand(body = "") {
   const match = String(body).trim().match(/^\/(start|status|approve|revise|resume|attest)(?:\s+([\s\S]*))?$/i);
@@ -31,14 +32,7 @@ export function checkApproval(state, code, files) {
   if (digest(files) !== state.gate.digest) return "The documents have changed since review; request /revise before approval.";
   return null;
 }
-export function validateBlocks(parsed) {
-  if (!parsed || !Array.isArray(parsed.blocks) || parsed.blocks.length < 1 || parsed.blocks.length > 3) throw new Error("Need 1–3 bounded build blocks.");
-  for (const [i,b] of parsed.blocks.entries()) {
-    if (!b || b.id !== `B${String(i+1).padStart(2,"0")}` || typeof b.goal !== "string" || b.goal.trim().length < 12 ||
-        !Array.isArray(b.acceptance) || !b.acceptance.length || b.acceptance.some(x=>typeof x!=="string" || !x.trim())) throw new Error("Invalid block definition.");
-  }
-  return parsed.blocks;
-}
+export {validateBlocks} from "./blocks.mjs";
 export function permittedChange(path) {
   if (typeof path !== "string" || !path || path.includes("..") || path.startsWith("/") || path.includes("\\") || /\p{Cc}/u.test(path)) return false;
   const forbidden = [".github", "harness", ".agents", ".claude", ".codex", ".buildkit", "node_modules", ".git", "scripts"];

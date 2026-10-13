@@ -1,47 +1,49 @@
-# Cloudflare Previews and production release
+# Cloudflare is an optional Buildkit adapter
 
-**Cloudflare hosts each product preview, not the Buildkit controller.** Buildkit remains a GitHub template + Actions workflows.
+Buildkit itself runs from GitHub. **Only if the approved HLD chooses Cloudflare Workers** does this adapter manage Worker previews, D1/KV/R2 resources, custom-domain attachment and production release. Native applications, GPU services and other providers must retain their chosen stack; unsupported adapters are explicit blockers.
 
-## What the user configures in the product repository
+## Review cost and permissions before creating anything
 
-- GitHub Actions secret `CLOUDFLARE_ACCOUNT_ID`.
-- Secret `CLOUDFLARE_PREVIEW_TOKEN` scoped to preview creation/Worker scripts.
-- Actions variable `BUILDKIT_WORKER_NAME` — the exact app Worker name.
-- Secret `CLOUDFLARE_PROD_TOKEN` only for production approval and deployment.
+The architecture agent generates `docs/EXECUTION_PLAN.json` and `docs/INFRA_PLAN.json`. Human approval of the execution plan is followed by a **separate provisioning approval** whenever resources or a custom domain are proposed.
 
-The user must authorize the Cloudflare account and any resources; Buildkit cannot silently create paid or production resources without permission.
+The resource plan includes exact names, isolation requirements, pricing source, estimated monthly USD charges (or **UNKNOWN**), assumptions, possibly variable charges, token permission scopes and side effects. Reviewing the estimate is not the same as enabling an account-level hard spend cap.
 
-## Example config
+In the **private product repository** under GitHub Actions secrets, configure only the credentials needed by that product:
 
-The agent generates a source `wrangler.json` and a self-contained, deployable `dist/buildkit` output. An illustrative source config with preview bindings:
+| Setting | When used |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | Provision, preview and release |
+| `CLOUDFLARE_PROVISION_TOKEN` | Dedicated D1/KV/R2 create/list permission after provisioning approval |
+| `CLOUDFLARE_PREVIEW_TOKEN` | Upload the approved staging Worker Preview |
+| `CLOUDFLARE_PROD_TOKEN` | After production release approval: deploy Worker and attach any exact approved domain |
+| Optional variable `BUILDKIT_WORKER_NAME` | Additional assertion that must match `EXECUTION_PLAN.json` Worker name; **not** a universal requirement |
 
-```json
-{
-  "name": "my-product-worker",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-09-01",
-  "vars": {"ENVIRONMENT": "production"},
-  "previews": {"vars": {"ENVIRONMENT": "preview"}}
-}
-```
+Never put API keys in Issues, README, environment examples, Wrangler config or the public Buildkit source repository.
 
-This works as a **configuration illustration**, not a complete built application. If using D1, R2, KV, or other bindings, configure **separate existing preview resources** in `previews` and verify IDs differ from production. Some Cloudflare bindings have their own isolation rules. Service bindings may resolve to production in Previews and are rejected by this harness.
+## Resource isolation and reconciliation
 
-See [official Cloudflare preview setup](https://developers.cloudflare.com/workers/previews/get-started/) and [isolation rules](https://developers.cloudflare.com/workers/previews/resources/).
+For a Cloudflare Worker, Buildkit can **actually create** approved D1 databases, Workers KV namespaces and R2 buckets using Cloudflare's API. Each resource is named specifically for the product and has separate preview/production identities. Exact resource identifiers and account fingerprint are persisted in the nonsecret `docs/infrastructure/PROVISIONED.json` receipt.
 
-## What happens automatically
+The agent generates `wrangler.json` from those bound resources. Before preview or release, the controller checks the resolved binding names and IDs against the approved infrastructure plan and receipt. Existing resources are only reused through an explicitly approved `reuse` mode with exact resource IDs, or safely reconciled within Buildkit's product-specific namespace on retries.
 
-1. The build stage completes the application, unit/build checks, requirement traceability, a real `tests/e2e.spec.mjs`, and `package.json` `buildkit.deploymentDirectory` (default `dist/buildkit`). The built output contains a compiled .js Worker entry and/or static assets plus `wrangler.json` with `no_bundle: true`.
-2. `buildkit-preview.yml` checks the exact candidate SHA, configuration, dependency vulnerabilities and secrets; it builds in a credential-free job, hashes all deployment-output files, and uploads an immutable artifact with a source SHA and payload digest.
-3. With preview-only credentials, Wrangler publishes **only those checked artifact bytes** to a named **Workers Preview** without rerunning npm build scripts.
-4. Playwright opens the URL, captures desktop/mobile screenshots, records page exceptions, and runs at least two user-journey tests.
-5. The browser workflow saves evidence to the product branch and posts the URL to the original issue. Approve or revise only after inspecting it. The URL is normally accessible publicly: never populate it with real sensitive data.
-6. After separate UX approval, obtain a distinct code/security review (second provider or explicit human `/review CODE`). After the separate production approval, `buildkit-release.yml` verifies the reviewed source and hashed artifact, reruns security checks, permits only controller metadata changes, merges the PR, uploads the **same preview-tested bytes** with the production credential, and smoke-tests the returned URL. A failure is reported as failure, not a successful release.
+Cloudflare Workers Previews automatically isolate certain Worker-owned state, but D1, KV and R2 are account-level resources and **must** use separate staging bindings. Do not populate public previews with real customer data.
 
-## Known boundaries
+For resources outside the adapter (e.g. other provider managed databases, specialised GPU infrastructure), the plan remains valid but Buildkit reports the missing provider-specific adapter rather than using an unrelated Cloudflare resource.
 
-- Native mobile applications, GPU-dependent services and unsupported frameworks require a different adapter; do not pretend a Workers preview is a complete deployment.
-- This harness does **not** auto-create D1 databases, KV namespaces, R2 buckets, or DNS/custom domains. It requires correct authorized bindings or blocks clearly.
-- Workers Preview URLs are not production releases. Access policies, secrets, cookies, data retention and third-party callbacks may need extra setup.
-- Generated Playwright tests are not independent proof that every user journey is correct. Inspect assertions and evidence.
-- Production merge cannot always be rolled back automatically. The owner remains responsible for safe migrations, backups and a tested rollback procedure.
+## Preview
+
+After implementing all approved, requirement-mapped blocks, the Worker adapter builds the application in a credential-free container, preserves immutable output and a SHA-256 manifest, scans dependencies and secrets, and publishes the exact build to Workers Previews. Playwright records browser journeys and screenshots. The user approves the actual result.
+
+See [output contract](BUILD_OUTPUT.md). The source code, built application, plan, checked artifact and approval codes must remain version-bound.
+
+## Custom domains and production
+
+A custom domain is optional. A plan can propose an exact hostname and the ID of the user's **active, owned Cloudflare zone**. The provisioning stage records the intent but **does not change DNS**.
+
+After a distinct production release approval, Buildkit verifies the existing zone, account and DNS/Worker-domain conflicts. Only then does it attach the approved hostname to the approved Worker, without overwriting an existing record. Domain attachment failure is reported as a partial release requiring reconciliation, not a successful launch.
+
+Production uploads the **same exact immutable build tested in preview** and verifies the real production URL. Approval never grants permission to deploy to a different Worker or Cloudflare account. Provider usage charges, migrations, backups and rollback need separate operating consideration.
+
+References: [Workers Previews](https://developers.cloudflare.com/workers/previews/) · [Provision D1/KV/R2](https://developers.cloudflare.com/changelog/post/2025-10-24-automatic-resource-provisioning/) · [Custom domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
+
+[Back to guided setup](HARNESS.md) · [Execution adapters](EXECUTION_ADAPTERS.md).

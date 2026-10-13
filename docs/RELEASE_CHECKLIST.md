@@ -10,6 +10,14 @@ Use this checklist for every product. The Buildkit harness blocks automatically 
 - [ ] `spikes/results.json` contains real observations and a `GO` result; missing critical integration proof is a BLOCK.
 - [ ] Chosen model passes a representative task-specific evaluation if ML output quality is material.
 
+## Resource consent and execution coverage
+
+- [ ] HLD chose actual runtime/build/preview/deploy adapters, not default Cloudflare.
+- [ ] Every approved FR is mapped to build blocks, tests and dependencies; no total-block ceiling truncates scope.
+- [ ] If resources are needed, the exact plan lists pricing, unknown charges, permission scopes and distinct preview/production names; user explicitly approved provisioning.
+- [ ] Resolved resources match the approved plan and account, without swapping staging/production identifiers.
+- [ ] Any domain is owned, free of conflicting DNS and attached only after release approval.
+
 ## Security and correctness
 
 - [ ] No secrets in code, generated files, tests, front-end assets, Git history or logs. Gitignore is not sufficient.
@@ -25,7 +33,9 @@ Use this checklist for every product. The Buildkit harness blocks automatically 
 - [ ] Preview Worker name/account verified and distinct preview bindings configured.
 - [ ] Real Cloudflare Preview URL works, with actual Playwright user journeys and screenshots.
 - [ ] Preview visibility is appropriate (Cloudflare Access for confidential content) and contains no real customer secrets.
-- [ ] Preview artifact manifest records the build source SHA, per-file checksums and complete output SHA-256; preview and production consume identical bytes without rebuilding under deployment keys.\n- [ ] UX preview approval and separate version-bound code/security sign-off have both been recorded.\n- [ ] Latest reviewed source and artifact digest match the release record; only controller metadata may advance after approval.
+- [ ] Preview artifact manifest records the build source SHA, per-file checksums and complete output SHA-256; preview and production consume identical bytes without rebuilding under deployment keys.
+- [ ] UX preview approval and separate version-bound code/security sign-off have both been recorded.
+- [ ] Latest reviewed source and artifact digest match the release record; only controller metadata may advance after approval.
 - [ ] Final release approval provided by an authorized collaborator, separately from preview.
 - [ ] Production merge preserves the reviewed application bytes (metadata-only dispatch commits are separately verified); deployment uses the exact approved artifact in the correct Worker/account.
 - [ ] Post-deployment HTTP and critical authenticated user journeys tested; logs inspected.
