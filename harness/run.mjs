@@ -505,15 +505,26 @@ export async function run(context={}) {
   }
   if(cmd?.name==="status"){
     await pr();
+    let workflowState="";
+    if(state.dispatch && state.dispatch.workflow){
+      try{
+        const existing=await dispatchStatus(state.dispatch,api);
+        workflowState=existing?". Latest workflow: "+existing.status+" / "+(existing.conclusion||"running")+
+          ". "+existing.html_url:". GitHub has not listed the dispatched workflow yet.";
+      }catch{workflowState=". Workflow status could not be retrieved; retry /status.";}
+    }
     await comment("Buildkit: **"+state.status+"** / **"+state.stage+"**. Completed blocks: "+(state.completedBlocks.map(x=>x.id).join(", ")||"none")+
       (prURL?". [Draft PR]("+prURL+")":"")+(state.gate?". /approve "+state.gate.code:"")+
       (state.lastError?". Last error: "+state.lastError:"")+
       (state.codeReviewRequest?". Code/security review: /review "+state.codeReviewRequest.code:"")+
       (state.dispatch?". Workflow request: "+state.dispatch.kind+" @"+state.dispatch.sha:"")+
+      workflowState+(state.pendingContinuation?". Next bounded batch has been requested.":"")+
       ". Production requires separate approval.");return;
   }
   if(state.status==="release-ready"){await comment("Production release complete in test harness. Check actual Actions deployment status for real projects.");return;}
-  if(state.status==="deploy_pending"){await comment("Production workflow dispatched for approved commit. Check Actions for actual release result.");return;}
+  if(state.status==="deploy_pending" && cmd?.name!=="resume"){
+    await comment("Production request is still pending; use /status or /resume to reconcile the exact approved version.");return;
+  }
   let go=false;
   if((labeled||cmd?.name==="start")&&state.status==="new")go=true;
   else if(cmd?.name==="approve"){
