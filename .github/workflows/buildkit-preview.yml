@@ -47,10 +47,8 @@ jobs:
             sh -c 'npm ci --ignore-scripts --no-audit --no-fund && npm audit --omit=dev --audit-level=high'
       - name: Detect secrets in all application files
         run: |
-          curl -fsSL --retry 3 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks.tgz
-          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz' | sha256sum -c -
-          tar -xf /tmp/gitleaks.tgz -C /tmp gitleaks
-          /tmp/gitleaks dir --redact --no-banner app
+          docker pull ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges -v "$PWD/app:/scan:ro" -w /scan ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb dir --redact --no-banner /scan
   deploy:
     needs: [preflight]
     runs-on: ubuntu-latest
