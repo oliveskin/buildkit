@@ -50,7 +50,10 @@ function save(state,msg){
 }
 async function complete(){
   if(!token||!repo)throw Error("GitHub authorization missing for the report");
-  const state=preflight(),reportPath=env.BUILDKIT_PREVIEW_RESULT_PATH||"";
+  const state=JSON.parse(read(".buildkit/state.json")),reportPath=env.BUILDKIT_PREVIEW_RESULT_PATH||"";
+  if(git("rev-parse","HEAD")!==sha||state.issue!==issue||state.status!=="awaiting_preview"||
+    state.stage!=="implementation"||state.previewSourceSha!==sha)
+    throw Error("Stale preview result or branch changed.");
   let result=null,problem=null;
   try{
     if(env.BUILDKIT_BROWSER_JOB!=="success")throw Error("Preview build or browser job failed.");
