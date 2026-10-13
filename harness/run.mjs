@@ -107,7 +107,7 @@ export async function run(context={}) {
     }
     const head=git("rev-parse","HEAD"), before=readOnly?digest(stageFiles("preview")):null;
     const stateBefore=read(".buildkit/state.json");
-    const controlled=["docs/research/EVIDENCE.json","spikes/results.json","docs/security/PROFILE.json","docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"];
+    const controlled=["docs/research/EVIDENCE.json","spikes/results.json","docs/security/PROFILE.json","docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json","docs/infrastructure/PROVISIONED.json"];
     const evidenceBefore=digest(entries(controlled));
     const output=command(provider,cfg.args,{env:cfg.env,input:task,timeout:600000});
     if(git("rev-parse","HEAD")!==head)throw Error("Agent committed code; controller rejected it.");
@@ -179,7 +179,8 @@ export async function run(context={}) {
   async function stage(){
     state.status="working";state.gate=null;state.runId=env.GITHUB_RUN_ID||null;
     persist("buildkit: begin "+state.stage); // recoverable even after runner cancellation
-    const provider=selectProvider(env);agentConfig(provider,env);
+    const provider=["infrastructure","provisioning"].includes(state.stage)?null:selectProvider(env);
+    if(provider)agentConfig(provider,env);
     approved();
     if(state.stage==="direction"){
       let cachedResearch=null;
@@ -578,7 +579,8 @@ export async function run(context={}) {
       await comment("There is no revisable output; wait for the active preview or release.");return;
     }
     if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
-    const boundary=["direction","architecture"].includes(state.stage)?state.stage:"implementation";
+    const boundary=state.stage==="direction"?"direction":
+      ["architecture","infrastructure","provisioning"].includes(state.stage)?"architecture":"implementation";
     if(boundary==="direction")state.researchNotes=cmd.arg;
     const files=invalidateFrom(state,boundary,{actor:who,reason:cmd.arg});
     for(const p of files)if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
