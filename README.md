@@ -2,7 +2,7 @@
 
 **Build a real product by describing an idea in GitHub — and reviewing the decisions, evidence, live preview, and production release instead of managing prompts.**
 
-Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring your own GitHub account, one Claude/Codex API key, and a Cloudflare account for deployment. APIs, compute and optional hosting can still incur charges.
+Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring your own GitHub account, one Claude/Codex API key, and infrastructure credentials only if the approved deployment adapter requires them. APIs, compute and optional hosting can still incur charges.
 
 ## Quick start
 
