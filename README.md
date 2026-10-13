@@ -83,7 +83,6 @@ For unsupported external resource providers, Buildkit records the necessary reso
 - **[Prompts reference](PROMPTS.md)**, [manual playbook](START-HERE.md), [worked exercise](FIRST-PRODUCT-EXERCISE.md)
 - **[Agent rules](AGENTS.md)** and project-local skills in `.agents/skills/` and `.claude/skills/`
 - **[Architecture/examples](examples/)**: Cloudflare Worker and Modal inference (examples, not automatically configured infrastructure)
-- [Prior security audit](docs/AUDIT.md)
 
 ### Current proof boundary
 
