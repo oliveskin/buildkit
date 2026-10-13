@@ -421,7 +421,10 @@ export async function run(context={}) {
     persist("buildkit: invalidate research and downstream approvals");
     go=true;
   }else if(cmd?.name==="revise"){
-    if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix blocker, then /resume.");return;}
+    if(!["awaiting_approval","awaiting_code_review","blocked"].includes(state.status) ||
+       state.stage==="deploying"){
+      await comment("There is no revisable output; wait for the active preview or release.");return;
+    }
     if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
     const boundary=["direction","architecture"].includes(state.stage)?state.stage:"implementation";
     if(boundary==="direction")state.researchNotes=cmd.arg;
