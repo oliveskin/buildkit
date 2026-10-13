@@ -12,6 +12,9 @@ import { assertClean } from "./security-gate.mjs";
 import { classifyProduct, assessRelease } from "./compliance.mjs";
 import { verifyBrowserResults } from "./cloudflare.mjs";
 import { researchCacheKey, shouldRefreshResearch, invalidateFrom } from "./research-control.mjs";
+import { workflowRequest, sendWorkflow, dispatchStatus } from "./dispatch.mjs";
+import { parseWorkflowCommand } from "./workflow-commands.mjs";
+import { reviewTarget, makeReviewRequest, acceptHumanReview, codeReviewPassed } from "./review-policy.mjs";
 
 // Dependencies are injectable only through this module API for offline regression tests.
 export async function run(context={}) {
