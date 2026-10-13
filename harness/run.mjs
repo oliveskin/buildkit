@@ -9,7 +9,8 @@ import { inspectFile, assertChanges, makeTestSnapshot, containerArgs, redact } f
 import { collectResearch, verifyResearch } from "./research.mjs";
 import { executeSpikes, verifySpikePlan } from "./feasibility.mjs";
 import { assertClean } from "./security-gate.mjs";
-import { classifyProduct } from "./compliance.mjs";
+import { classifyProduct, assessRelease } from "./compliance.mjs";
+import { verifyBrowserResults } from "./cloudflare.mjs";
 
 // Dependencies are injectable only through this module API for offline regression tests.
 export async function run(context={}) {
@@ -90,7 +91,7 @@ export async function run(context={}) {
     }
     const head=git("rev-parse","HEAD"), before=readOnly?digest(stageFiles("preview")):null;
     const stateBefore=read(".buildkit/state.json");
-    const controlled=["docs/research/EVIDENCE.json","spikes/results.json","docs/security/PROFILE.json","docs/evidence/PREVIEW.json"];
+    const controlled=["docs/research/EVIDENCE.json","spikes/results.json","docs/security/PROFILE.json","docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"];
     const evidenceBefore=digest(entries(controlled));
     const output=command(provider,cfg.args,{env:cfg.env,input:task,timeout:600000});
     if(git("rev-parse","HEAD")!==head)throw Error("Agent committed code; controller rejected it.");
@@ -127,7 +128,7 @@ export async function run(context={}) {
     }
     try {
       const install=read("package-lock.json")?"ci":"install";
-      for(const [args,network] of [[["npm",install,"--ignore-scripts","--no-audit","--no-fund"],true],[["npm","run","build"],false],[["npm","test"],false]]){
+      for(const [args,network] of [[["npm",install,"--ignore-scripts","--no-audit","--no-fund"],true],[["npm","audit","--omit=dev","--audit-level=high"],true],[["npm","run","build"],false],[["npm","test"],false]]){
         const output=command("docker",containerArgs(snapshot,args,network),{timeout:180000});
         log.push("$ "+args.join(" ")+"\n"+output+"\nExit: 0");
       }
@@ -225,7 +226,12 @@ export async function run(context={}) {
       for(const b of blocks){
         if(state.completedBlocks.some(x=>x.id===b.id))continue;
         const specs=digest(entries(Object.values(STAGE_FILES).flat()));
-        agent(provider,instructions()+"\nImplement only "+JSON.stringify(b)+". Scaffold a runnable npm app; include real behavioural tests. Do not edit the specification files. Tests are run separately by the controller.");
+        agent(provider,instructions()+"\nImplement only "+JSON.stringify(b)+
+          ". Build a real Cloudflare Workers compatible web app. Generate wrangler.json in strict JSON "+
+          "with approved worker name, previews.vars.ENVIRONMENT='preview', and separate preview "+
+          "resource bindings. Generate tests/e2e.spec.mjs with at least two actual user journeys "+
+          "using BASE_URL, as well as npm build/test scripts. Do not insert keys or customer data. "+
+          "Do not modify approved specifications. The controller runs tests.");
         if(digest(entries(Object.values(STAGE_FILES).flat()))!==specs)throw Error("Builder changed a specification.");
         const evidence=testApp(b);
         state.completedBlocks.push({id:b.id,checked:new Date().toISOString(),evidence});

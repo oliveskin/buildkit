@@ -19,7 +19,7 @@ function preflight(){
   if(git("rev-parse","HEAD")!==sha)throw Error("Stale preview: branch/ref changed.");
   const state=JSON.parse(read(".buildkit/state.json"));
   if(state.issue!==issue||state.status!=="awaiting_preview"||state.stage!=="implementation"||
-    state.previewSourceSha!==sha)throw Error("Preview request not approved for this SHA.");
+    state.previewSourceSha!==git("rev-parse","HEAD^"))throw Error("Preview request not approved for this SHA.");
   if(JSON.parse(read("spikes/results.json")).decision!=="GO")
     throw Error("Unverified critical feasibility dependency.");
   if(!fs.existsSync(file("docs/security/PROFILE.json")))throw Error("Security profile missing.");
@@ -52,7 +52,7 @@ async function complete(){
   if(!token||!repo)throw Error("GitHub authorization missing for the report");
   const state=JSON.parse(read(".buildkit/state.json")),reportPath=env.BUILDKIT_PREVIEW_RESULT_PATH||"";
   if(git("rev-parse","HEAD")!==sha||state.issue!==issue||state.status!=="awaiting_preview"||
-    state.stage!=="implementation"||state.previewSourceSha!==sha)
+    state.stage!=="implementation"||state.previewSourceSha!==git("rev-parse","HEAD^"))
     throw Error("Stale preview result or branch changed.");
   let result=null,problem=null;
   try{
