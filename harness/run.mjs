@@ -382,15 +382,24 @@ export async function run(context={}) {
       return;
     }
     go=true;
+  }else if(cmd?.name==="refresh-research"){
+    if(["awaiting_preview","deploy_pending"].includes(state.status)||state.stage==="deploying"||state.status==="release-ready"){
+      await comment("Cannot refresh evidence during an active preview or production release. Resolve the current workflow first.");return;
+    }
+    const files=invalidateFrom(state,"direction",{actor:who,reason:"Requested fresh research and source review"});
+    state.researchNotes=(cmd.arg||state.researchNotes||"").slice(0,1800);
+    for(const p of files)if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+    persist("buildkit: invalidate research and downstream approvals");
+    go=true;
   }else if(cmd?.name==="revise"){
     if(state.status!=="awaiting_approval"){await comment("No open review gate. Fix blocker, then /resume.");return;}
     if(cmd.arg.length<5||cmd.arg.length>2000){await comment("Provide 5-2000 feedback characters.");return;}
-    state.feedback=cmd.arg;state.revision++;
-    if(state.stage==="release"){state.stage="implementation";state.previewReviewedBy=null;}
-    state.planDigest=null;state.completedBlocks=[];
-    for(const p of ["docs/evidence/PREVIEW.json","docs/security/RELEASE_REVIEW.json"]){
-      if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
-    }
+    const boundary=["direction","architecture"].includes(state.stage)?state.stage:"implementation";
+    if(boundary==="direction")state.researchNotes=cmd.arg;
+    const files=invalidateFrom(state,boundary,{actor:who,reason:cmd.arg});
+    for(const p of files)if(fs.existsSync(path.join(root,p)))fs.unlinkSync(path.join(root,p));
+    state.feedback=cmd.arg;
+    persist("buildkit: revise "+boundary+" and invalidate dependent evidence");
     go=true;
   }else if(cmd?.name==="attest"){
     if(cmd.arg!=="COMPLIANCE-REVIEWED"||state.stage!=="release"){
