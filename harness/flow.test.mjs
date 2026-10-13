@@ -257,3 +257,14 @@ test("controller retries production dispatch without replacing the release-appro
     assert.equal(f.releaseAttempts[1].inputs.approved_sha,original);
   }finally{f.cleanup();}
 });
+
+test("new search access before scope approval automatically refreshes displayed evidence",async()=>{
+  const f=fixture();try{
+    await f.invoke();const staleCode=f.state.gate.code;
+    await f.invoke("/approve "+staleCode,{BUILDKIT_SEARCH_ENDPOINT:"https://search.example.com"});
+    assert.equal(f.state.gate.stage,"direction");
+    assert.notEqual(f.state.gate.code,staleCode);
+    assert.ok(f.state.history.some(x=>x.event==="outputs_invalidated"&&x.stage==="direction"));
+    assert.equal(f.state.history.filter(x=>x.event==="approved").length,0);
+  }finally{f.cleanup();}
+});
