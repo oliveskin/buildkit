@@ -406,13 +406,25 @@ export async function run(context={}) {
         state.preview={url:demo.previewUrl,sourceSha,artifact,report:"docs/evidence/PREVIEW.json"};
         await gate("preview","Simulated browser result used by offline harness tests ONLY.");
       }else{
+        if(execution.preview.adapter!=="cloudflare-workers"){
+          state.status="blocked";
+          state.lastError="The approved preview adapter "+execution.preview.adapter+
+            " is not yet automated. Application blocks were built/tested without substituting Cloudflare. "+
+            "Configure a suitable preview adapter or revise the approved architecture.";
+          persist("buildkit: unsupported selected preview adapter");
+          await comment("**Preview adapter required:** "+state.lastError+
+            " No production deployment or unrelated Cloudflare resources were created.");
+          return;
+        }
+        if(env.BUILDKIT_WORKER_NAME && env.BUILDKIT_WORKER_NAME!==execution.deploy.workerName)
+          throw Error("Optional Cloudflare Worker override differs from the approved HLD target.");
         state.status="awaiting_preview";state.previewSourceSha=git("rev-parse","HEAD");state.gate=null;
         persist("buildkit: awaiting Cloudflare Preview for #"+number);
         await pr();
-        await comment("Buildkit completed the testable code blocks. Running Cloudflare Preview, "+
+        await comment("Buildkit completed all approved blocks. Running the selected Cloudflare Preview adapter, "+
           "isolated dependency/security checks and Playwright browser tests. "+
-          "If setup is missing, add CLOUDFLARE_PREVIEW_TOKEN, CLOUDFLARE_ACCOUNT_ID and "+
-          "BUILDKIT_WORKER_NAME in this product repository. Review happens after a real Preview URL exists.");
+          "Provide CLOUDFLARE_PREVIEW_TOKEN and CLOUDFLARE_ACCOUNT_ID in this product repository if needed. "+
+          "The Worker name comes from the user-approved execution plan.");
         const request=workflowRequest("preview",checkpoint,number,baseBranch);
         state.previewRequest=request;
         await sendWorkflow({state,request,api,persist,comment});
@@ -444,9 +456,10 @@ export async function run(context={}) {
       if(report.decision!=="GO")throw Error("Production blocked: "+report.blockers.join("; ")+
         " For regulated products obtain a qualified review, then comment "+
         "/attest COMPLIANCE-REVIEWED and /resume.");
-      await gate("release","Explicit production approval: release only the browser-reviewed "+
-        "commit to the approved Cloudflare Worker. This may merge the product PR and "+
-        "incur ongoing Cloudflare/model usage charges. No deployment until you approve.");
+      await gate("release","Explicit production approval: release only the reviewed source, "+
+        "immutable artifact, selected deployment adapter and any previously approved custom domain. "+
+        "Infrastructure operation/cost exposure is in docs/INFRA_PLAN.json. "+
+        "No production changes until this approval.");
     }else throw Error("Invalid stage.");
   }
   if(!token||!repo)throw Error("GitHub runtime missing.");
