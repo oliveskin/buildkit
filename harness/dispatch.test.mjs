@@ -11,7 +11,7 @@ test('dispatch failure is durably blocked with the same request for retry',async
 test('active or successfully completed dispatches are never duplicated',async()=>{
   for(const status of ['in_progress','completed']){
     const request=workflowRequest('preview','b'.repeat(40),2,'main');let posts=0;
-    const api=async method=>{if(method==='POST')posts++;return {workflow_runs:[{id:2,display_title:request.title,status,conclusion:status==='completed'?'success':null}]};};
+    const api=async method=>{if(method==='POST')posts++;return {workflow_runs:[{id:2,display_title:request.title,status,conclusion:status==='completed'?'success':null,updated_at:new Date().toISOString()}]};};
     await sendWorkflow({state:{},request,api,persist:()=>{},comment:async()=>{},retry:true});
     assert.equal(posts,0);
   }
