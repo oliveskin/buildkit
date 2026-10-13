@@ -24,10 +24,14 @@ Guided mode: generated after approved architecture and infrastructure decisions.
 ## Cross-block integration contracts
 [Typed interfaces; order to merge; integration owner]
 
-## Reproducible deployment output\n[package.json buildkit.deploymentDirectory, default dist/buildkit; no_bundle built Worker/asset payload, hashed source/artifact identity, preview-safe Cloudflare bindings]\n\n## Test plan
+## Reproducible deployment output
+[package.json buildkit.deploymentDirectory, default dist/buildkit; no_bundle built Worker/asset payload, hashed source/artifact identity, preview-safe Cloudflare bindings]
+
+## Test plan
 [Unit, integration, E2E/browser, contract, security, failure, load]
 
 ## Implementation versus release
 Implementation: every MMFS FR mapped to one or more blocks, dependencies checked for cycles, small per-run checkpoints, real runtime-specific build/tests and no silent scope change.
-Preview: verify immutable compiled output, SHA-256 payload digest, Playwright user journeys and UX approval.\nCode/security review: separate from UX; review the full diff, authorization, dependency/secret checks and the version-bound artifact. Record an independent second-provider PASS or an explicit human code/security acknowledgment.
+Preview: verify immutable compiled output, SHA-256 payload digest, Playwright user journeys and UX approval.
+Code/security review: separate from UX; review the full diff, authorization, dependency/secret checks and the version-bound artifact. Record an independent second-provider PASS or an explicit human code/security acknowledgment.
 Release: approve exact source/build evidence, selected preview/release adapter and approved resource/domain plan. When using Cloudflare, deploy exactly browser-tested immutable bytes and attach any approved domain only after release authorization. Unsupported targets must remain BLOCKED, not silently substituted. The harness marks deployment complete only after the release job reports success.
