@@ -10,7 +10,7 @@ import { collectResearch, verifyResearch } from "./research.mjs";
 import { executeSpikes, verifySpikePlan } from "./feasibility.mjs";
 import { assertClean } from "./security-gate.mjs";
 import { classifyProduct, assessRelease } from "./compliance.mjs";
-import { verifyBrowserResults } from "./cloudflare.mjs";
+import { verifyBrowserResults, validWorkerName } from "./cloudflare.mjs";
 import { researchCacheKey, shouldRefreshResearch, invalidateFrom } from "./research-control.mjs";
 import { workflowRequest, sendWorkflow, dispatchStatus } from "./dispatch.mjs";
 import { parseWorkflowCommand } from "./workflow-commands.mjs";
@@ -239,8 +239,11 @@ export async function run(context={}) {
       generate(provider,["docs/FEASIBILITY.md"],"Report only actual observations in spikes/results.json; "+
         "cite exact probe IDs, explain what these tests do NOT prove, give a GO/CHANGE/NO-GO decision.");
       await gate("architecture","Review PRD, HLD and actual risk-check evidence. Critical probes passed; "+
-        "untested capabilities must still be described as UNVERIFIED.");
+        "untested capabilities must still be described as UNVERIFIED. Before approving, set the exact "+
+        "BUILDKIT_WORKER_NAME repository variable; implementation must not invent a deployment target.");
     }else if(state.stage==="implementation"){
+      if(!validWorkerName(env.BUILDKIT_WORKER_NAME||""))
+        throw Error("Set a valid BUILDKIT_WORKER_NAME repository variable before implementation, using the exact intended Cloudflare Worker name.");
       if(!state.planDigest){
         generate(provider,["docs/LLD.md"],"Use approved docs and LLD_TEMPLATE: concrete routes, screens, schemas, tests and rollback. Cover the whole approved MMFS, not unrelated features.");
         generate(provider,["docs/BUILD_BLOCKS.json"],'Write JSON only: {"blocks":[{"id":"B01","goal":"Complete core user workflow","acceptance":["Behavioural test passes"]}]}. 1–3 ordered blocks B01–B03 covering approved MMFS.');
