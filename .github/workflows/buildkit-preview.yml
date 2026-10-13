@@ -1,4 +1,5 @@
 name: Buildkit · Cloudflare Preview and browser verification
+run-name: Buildkit preview #${{ inputs.issue_number }} @${{ inputs.candidate_sha }}
 on:
   workflow_dispatch:
     inputs:
