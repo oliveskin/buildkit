@@ -1,4 +1,5 @@
 name: Buildkit · approved production release
+run-name: Buildkit release #${{ inputs.issue_number }} @${{ inputs.approved_sha }}
 on:
   workflow_dispatch:
     inputs:
