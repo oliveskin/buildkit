@@ -252,6 +252,7 @@ export async function run(context={}) {
       state.complianceProfileDigest=digest(inspectFile(root,"docs/security/PROFILE.json"));
       state.security={secretScan:{passed:true,method:"controller content/path scan"},
         dependencyAudit:{passed:true,method:"isolated npm audit --omit=dev --audit-level=high"}};
+      if(repo==="test/product")console.log("BUILDKIT_DEBUG_PREVIEW_HOOK",typeof context.previewForTest,context.previewForTest===undefined?"ABSENT":"PRESENT");
       if(context.previewForTest){
         const demo=await context.previewForTest();
         verifyBrowserResults(demo,demo.previewUrl);
