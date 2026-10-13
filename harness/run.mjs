@@ -22,7 +22,7 @@ export async function run(context={}) {
   const execute=context.execute||spawnSync, request=context.fetch||fetch;
   const payload=JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH,"utf8"));
   const repo=env.GITHUB_REPOSITORY, token=env.GITHUB_TOKEN, event=env.GITHUB_EVENT_NAME;
-  const secrets=[token,env.OPENAI_API_KEY,env.ANTHROPIC_API_KEY];
+  const secrets=[token,env.OPENAI_API_KEY,env.ANTHROPIC_API_KEY,env.BUILDKIT_SEARCH_KEY];
   const safe=cleanEnv(env), errorText=e=>redact(String(e?.message||e),secrets).slice(-700);
   const read=p=>fs.existsSync(path.join(root,p))?fs.readFileSync(path.join(root,p),"utf8"):"";
   const write=(p,s)=>{fs.mkdirSync(path.dirname(path.join(root,p)),{recursive:true});fs.writeFileSync(path.join(root,p),s);};
