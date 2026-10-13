@@ -16,7 +16,7 @@ export function checkPreviewIsolation(config,approvedWorker) {
     throw Error("Missing previews configuration. Never reuse production bindings in a preview.");
   if(!config.main && !config.assets?.directory)
     throw Error("Worker needs main or assets.directory");
-  for(const key of ["routes","route","triggers","send_email","unsafe","build","service_bindings","tail_consumers","workflows","queues","services"]){
+  for(const key of ["routes","route","triggers","send_email","unsafe","build","service_bindings","tail_consumers","workflows" ,"queues"]){
     if(config[key]!==undefined || config.previews[key]!==undefined)
       throw Error("Unsupported or production-coupled Worker setting: "+key);
   }
