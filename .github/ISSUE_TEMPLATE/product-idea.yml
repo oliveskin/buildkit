@@ -1,8 +1,7 @@
 name: Build a product
 description: Tell Buildkit what you want to build; it will research and ask for approvals.
 title: "[Product] "
-labels: ["buildkit:idea"]
-body:
+ body:
   - type: markdown
     attributes:
       value: |
