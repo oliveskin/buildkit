@@ -226,6 +226,8 @@ async function main(){
   catch(e){
     const msg=errorText(e);
     state.status="blocked";state.lastError=msg;state.gate=null;
+    // Discard provisional successful-block counters along with uncommitted code.
+    if(state.stage==="implementation")state.completedBlocks=[];
     git("reset","--hard");git("clean","-fd");
     persist("buildkit: block failed "+state.stage);
     await comment("**Buildkit stopped at "+state.stage+"**. "+msg+
