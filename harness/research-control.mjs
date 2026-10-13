@@ -21,7 +21,7 @@ export function invalidateFrom(state,stage,{actor,reason,at=new Date().toISOStri
   const invalidated=Object.keys(state.approvedDocs||{}).filter(p=>files.includes(p));
   for(const p of invalidated)delete state.approvedDocs[p];
   for(const key of ['planDigest','preview','previewSourceSha','previewReviewedBy','codeReview','codeReviewRequest',
-    'complianceReview','complianceProfileDigest','security','releaseRequest','releaseApprovedBy',
+    'complianceReview','complianceProfileDigest','security','modelReview','releaseRequest','releaseApprovedBy',
     'releaseApprovedDigest','releaseResult','dispatch','finalEvidence'])delete state[key];
   state.completedBlocks=[];state.gate=null;state.lastError=null;state.stage=stage;state.status='new';
   state.revision=(state.revision||0)+1;
