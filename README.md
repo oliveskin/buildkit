@@ -4,6 +4,16 @@
 
 Buildkit is a free, MIT-licensed, GitHub-native orchestration harness. You bring your own GitHub account, one Claude/Codex API key, and infrastructure credentials only if the approved deployment adapter requires them. APIs, compute and optional hosting can still incur charges.
 
+## Before you start — nothing to install locally
+
+**Using the recommended GitHub workflow? You do not need to install Docker, Git, Node.js, Python, Rust, Claude Code, Codex, Wrangler, Gitleaks or Playwright on your computer.** Buildkit runs on GitHub-hosted Actions runners, which prepare the development tools and isolated build/test containers. You use your browser to open an Issue, inspect the draft PR, and approve decisions.
+
+**You do need:** a GitHub account with permission to create a private repository and enable GitHub Actions (including Actions-created PRs), and **one** separately billed provider API key: OpenAI (`OPENAI_API_KEY`) or Anthropic (`ANTHROPIC_API_KEY`). Add the key as a **GitHub Actions repository secret**, not in source files or Issues. Set your model-provider spending limits; GitHub Actions usage limits and charges may also apply.
+
+**Only when the approved architecture requires them:** you may need an infrastructure account and scoped credentials (for example, Cloudflare for a Cloudflare deployment). Buildkit presents resource requirements, estimated/unknown costs, and permissions for approval first. An optional research search service can improve market evidence; it is not required to start.
+
+**Local or self-hosted execution is an advanced, separate setup**, not part of the browser-only Quick start. You would manage Git, Node.js 22/npm, Docker Engine or an equivalent Docker-compatible runtime, a shell, model access, and any additional tools required by your selected build adapter. See the [prerequisites and execution modes](docs/HARNESS.md#prerequisites-and-execution-modes).
+
 ## Quick start
 
 1. Click **[Use this template](https://github.com/tinmanlabsl/buildkit/generate)**. Create a **private** repository for your product.
