@@ -4,6 +4,8 @@ import path from "node:path";
 import {execFileSync} from "node:child_process";
 import {loadWorkerConfig,checkPreviewIsolation,checkPreviewUrl} from "./cloudflare.mjs";
 import {assessRelease} from "./compliance.mjs";
+import {digest,STAGE_FILES} from "./core.mjs";
+import {inspectFile} from "./security.mjs";
 import {assertClean,trackedFiles} from "./security-gate.mjs";
 const env=process.env,repo=env.GITHUB_REPOSITORY,token=env.GITHUB_TOKEN;
 const issue=Number(env.BUILDKIT_ISSUE_NUMBER),sha=env.BUILDKIT_APPROVED_SHA;
@@ -19,6 +21,10 @@ function preflight(){
   if(state.issue!==issue || state.status!=="deploy_pending" ||
     state.stage!=="deploying" || !state.releaseApprovedBy)
     throw Error("Release lacks explicit version-bound GitHub approval.");
+  if(!state.releaseApprovedDigest ||
+     digest(STAGE_FILES.release.map(p=>inspectFile(app,p)))!==state.releaseApprovedDigest)
+    throw Error("Release documents no longer match the approved gate.");
+  if(!state.previewReviewedBy)throw Error("Human approval of the browser experience is missing.");
   const source=state.preview?.sourceSha;
   if(!/^[0-9a-f]{40}$/.test(source||""))throw Error("Verified preview SHA missing.");
   const changed=git("diff","--name-only",source,sha).split("\n").filter(Boolean);
@@ -29,16 +35,33 @@ function preflight(){
   if(preview.outcome!=="GO" ||preview.sourceSha!==source ||
     !preview.behaviouralTestsPassed || preview.pageErrors!==0)
     throw Error("Production requires a passing, matching Cloudflare browser preview.");
+  const artifact=preview.artifact;
+  if(!artifact || !/^[1-9][0-9]*$/.test(artifact.id||"") ||
+     !/^[1-9][0-9]*$/.test(artifact.runId||"") ||
+     !/^[0-9a-f]{64}$/.test(artifact.payloadDigest||"") ||
+     artifact.sourceSha!==source ||
+     state.preview?.artifact?.payloadDigest!==artifact.payloadDigest)
+    throw Error("Version-bound browser-reviewed deployment artifact is missing or changed.");
   const config=loadWorkerConfig(app);
   checkPreviewIsolation(config,env.BUILDKIT_WORKER_NAME||"");
   if(file("spikes/results.json").decision!=="GO")throw Error("Feasibility proofs absent.");
   assertClean(app,trackedFiles(app));
   const profile=file("docs/security/PROFILE.json");
   const review=assessRelease({profile,secretScan:{passed:true},dependencyAudit:{passed:true},
-    preview,independentReview:{passed:!!state.previewReviewedBy},
+    preview,codeReview:state.codeReview,
     externalAttestation:{approved:!!state.complianceReview?.confirmed &&
       state.complianceReview.profileDigest===state.complianceProfileDigest}});
   if(review.decision!=="GO")throw Error("Release blocked: "+review.blockers.join("; "));
+  if(env.GITHUB_OUTPUT){
+    const outputs={artifact_id:artifact.id,artifact_run:artifact.runId,
+      payload_digest:artifact.payloadDigest,source_sha:source,
+      base_branch:state.baseBranch,base_sha:state.baseSha};
+    for(const [k,value] of Object.entries(outputs)){
+      if(!/^[a-z0-9_-]+$/.test(k) || /[\r\n]/.test(String(value||"")))
+        throw Error("Invalid release workflow output");
+      fs.appendFileSync(env.GITHUB_OUTPUT,k+"="+value+"\n");
+    }
+  }
   return {state,worker:config.name,preview};
 }
 async function comment(body){
